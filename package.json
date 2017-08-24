@@ -3,7 +3,6 @@
   "version": "0.0.0",
   "description": "",
   "author": "",
-  "license": "ISC",
   "main": "build/qbmidi.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -22,81 +21,6 @@
     "eslint-config-airbnb-base": "^11.0.1",
     "eslint-plugin-import": "^2.2.0",
     "webpack": "^2.2.1"
-  },
-  "babel": {
-    "babelrc": false,
-    "presets": [
-    ]
-  },
-  "eslintConfig": {
-    "parser": "babel-eslint",
-    "extends": [
-      "airbnb-base"
-    ],
-    "env": {
-      "browser": true,
-      "node": true,
-      "es6": true
-    },
-    "parserOptions": {
-      "ecmaVersion": 6,
-      "sourceType": "module"
-    },
-    "rules": {
-      "arrow-parens": 0,
-      "arrow-body-style": [
-        2,
-        "as-needed"
-      ],
-      "comma-dangle": 0,
-      "import/imports-first": 1,
-      "import/named": 1,
-      "import/newline-after-import": 1,
-      "import/no-extraneous-dependencies": 1,
-      "import/no-named-as-default": 0,
-      "import/no-unresolved": 2,
-      "import/prefer-default-export": 0,
-      "indent": [
-        "error",
-        "tab",
-        {
-          "SwitchCase": 1
-        }
-      ],
-      "no-await-in-loop": 0,
-      "max-len": 0,
-      "newline-per-chained-call": 0,
-      "no-bitwise": 0,
-      "no-console": 1,
-      "no-tabs": 0,
-      "no-plusplus": 0,
-      "no-nested-ternary": 0,
-      "no-use-before-define": 0,
-      "no-return-assign": 0,
-      "no-param-reassign": 0,
-      "prefer-template": 2,
-      "class-methods-use-this": 0,
-      "semi": [
-        2,
-        "never"
-      ],
-      "key-spacing": [
-        2,
-        {
-          "align": "colon",
-          "beforeColon": true,
-          "afterColon": true
-        }
-      ],
-      "require-yield": 0
-    },
-    "settings": {
-      "import/resolver": {
-        "webpack": {
-          "config": "./webpack.config.js"
-        }
-      }
-    }
   },
   "dependencies": {
     "babel-runtime": "^6.23.0",
