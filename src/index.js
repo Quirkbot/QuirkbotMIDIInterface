@@ -18,7 +18,6 @@ import {
 } from './midi'
 import {
 	guaranteeLockThread,
-	lockThread,
 	unlockThread,
 } from './mutex'
 
@@ -28,14 +27,18 @@ import {
 } from './links'
 
 import {
-	uploadHexToSingleLink
+	uploadHexToSingleLink,
+	guaranteeSingleLinkEnterBootloaderMode,
+	guaranteeSingleLinkExitBootloaderMode
 } from './singleLink'
 
 /**
- * Globals
- **/
+* Globals
+*/
 const mainLinks = []
 const pendingUploads = []
+const pendingEnterBootloaderMode = []
+const pendingExitBootloaderMode = []
 
 export async function init() {
 	disableLogs()
@@ -43,6 +46,8 @@ export async function init() {
 		continuouslyMonitor(
 			mainLinks,
 			pendingUploads,
+			pendingEnterBootloaderMode,
+			pendingExitBootloaderMode,
 			await getMIDIAccess()
 		)
 	} catch (error) {
@@ -50,11 +55,15 @@ export async function init() {
 	}
 }
 
-export const getLinks = () => mainLinks
+export function getLinks() {
+	return mainLinks
+}
 
-export const getLinkByUuid = uuid => mainLinks.filter(l => l.uuid === uuid).pop()
+export function getLinkByUuid(uuid) {
+	return mainLinks.filter(l => l.uuid === uuid).pop()
+}
 
-export const verbose = value => {
+export function verbose(value) {
 	if (value) {
 		return enableLogs()
 	}
@@ -84,15 +93,59 @@ export async function uploadHexToLink(link, hexString) {
 	return pendingUpload.link
 }
 
-async function continuouslyMonitor(links, uploads, midiAccess) {
+export async function enterBootloaderMode(link) {
+	if (pendingEnterBootloaderMode.filter(request => request.link === link).length) {
+		throw new Error('There is an ongoing request to enter bootloader mode on this link.')
+	}
+
+	if (!link.midi) {
+		throw new Error('This link is not midi enabled.')
+	}
+
+	const request = {
+		link
+	}
+	pendingEnterBootloaderMode.push(request)
+	while (pendingEnterBootloaderMode.includes(request)) {
+		await delay(100)
+	}
+	if (request.error) {
+		throw request.error
+	}
+	return request.link
+}
+
+export async function exitBootloaderMode(link) {
+	if (pendingExitBootloaderMode.filter(request => request.link === link).length) {
+		throw new Error('There is an ongoing request to exit bootloader mode on this link.')
+	}
+
+	if (!link.midi) {
+		throw new Error('This link is not midi enabled.')
+	}
+
+	const request = {
+		link
+	}
+	pendingExitBootloaderMode.push(request)
+	while (pendingExitBootloaderMode.includes(request)) {
+		await delay(100)
+	}
+	if (request.error) {
+		throw request.error
+	}
+	return request.link
+}
+
+async function continuouslyMonitor(links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess) {
 	const runtimeId = (Math.random() * 100000000000).toFixed(0)
 	logOpenCollapsed(`Monitor - Runtime ID: ${runtimeId}`)
 
-	if (document.hidden) {
+	if (typeof document !== 'undefined' && document.hidden) {
 		log('Tab is not visible. Stopping task.')
 		logClose(true)
 		await delay(200 + (Math.random() * 100))
-		continuouslyMonitor(links, uploads, midiAccess)
+		continuouslyMonitor(links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 		return
 	}
 
@@ -104,7 +157,7 @@ async function continuouslyMonitor(links, uploads, midiAccess) {
 		log(`Error trying to lock thread ${runtimeId}`, error)
 		logClose(true)
 		await delay(200 + (Math.random() * 100))
-		continuouslyMonitor(links, uploads, midiAccess)
+		continuouslyMonitor(links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 		return
 	}
 	logClose()
@@ -132,6 +185,22 @@ async function continuouslyMonitor(links, uploads, midiAccess) {
 
 	inPlaceArrayConcat(links, foundLinks)
 
+	logOpen('Handle pending enter bootloader mode')
+	try {
+		await handlePendingEnterBootloaderModes(enterBootloaderModes, midiAccess)
+	} catch (error) {
+		console.log(error)
+	}
+	logClose()
+
+	logOpen('Handle pending exit bootloader mode')
+	try {
+		await handlePendingExitBootloaderModes(exitBootloaderModes, midiAccess)
+	} catch (error) {
+		console.log(error)
+	}
+	logClose()
+
 	logOpen('Handle pending uploads')
 	try {
 		await handlePendingUploads(uploads, midiAccess)
@@ -150,7 +219,7 @@ async function continuouslyMonitor(links, uploads, midiAccess) {
 		logClose(true)
 		log('Error trying to unlock thread', error)
 		await delay(200 + (Math.random() * 100))
-		continuouslyMonitor(links, uploads, midiAccess)
+		continuouslyMonitor(links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 		return
 	}
 	logClose()
@@ -164,7 +233,7 @@ async function continuouslyMonitor(links, uploads, midiAccess) {
 	if (foundLinks.length) {
 		log('%cQuirkbots found', 'color:green', foundLinks)
 	}
-	continuouslyMonitor(links, uploads, midiAccess)
+	continuouslyMonitor(links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 }
 
 async function handlePendingUploads(uploads, midiAccess) {
@@ -188,4 +257,50 @@ async function handleSinglePendingUpload(upload, uploads, midiAccess) {
 	upload.link.uploading = false
 	logClose()
 	uploads.splice(uploads.indexOf(upload), 1)
+}
+
+async function handlePendingEnterBootloaderModes(requests, midiAccess) {
+	// Handle only one request at the time
+	const request = requests[0]
+	if (request) {
+		await handleSinglePendingEnterBootloaderMode(request, requests, midiAccess)
+	}
+}
+
+async function handleSinglePendingEnterBootloaderMode(request, requests, midiAccess) {
+	logOpen('Enter Bootloader Mode')
+	request.link.enteringBootloaderMode = true
+	try {
+		await guaranteeSingleLinkEnterBootloaderMode(request.link, midiAccess)
+		log('%cSuccess', 'color:green')
+	} catch (error) {
+		log('%cUpload error', 'color:red', error)
+		request.error = error
+	}
+	request.link.enteringBootloaderMode = false
+	logClose()
+	requests.splice(requests.indexOf(request), 1)
+}
+
+async function handlePendingExitBootloaderModes(requests, midiAccess) {
+	// Handle only one request at the time
+	const request = requests[0]
+	if (request) {
+		await handleSinglePendingExitBootloaderMode(request, requests, midiAccess)
+	}
+}
+
+async function handleSinglePendingExitBootloaderMode(request, requests, midiAccess) {
+	logOpen('Exit Bootloader Mode')
+	request.link.exitingBootloaderMode = true
+	try {
+		await guaranteeSingleLinkExitBootloaderMode(request.link, midiAccess)
+		log('%cSuccess', 'color:green')
+	} catch (error) {
+		log('%cUpload error', 'color:red', error)
+		request.error = error
+	}
+	request.link.exitingBootloaderMode = false
+	logClose()
+	requests.splice(requests.indexOf(request), 1)
 }

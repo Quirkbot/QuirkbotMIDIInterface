@@ -19,7 +19,9 @@ import {
 
 import {
 	fromMIDI,
-	sendMIDItoOutput,
+	addMIDIMessageListenerToInput,
+	removeMIDIMessageListenerFromInput,
+	sendMIDIToOutput,
 	filterValidConnections
 } from './midi'
 
@@ -28,20 +30,41 @@ import {
 	PAGE_SIZE
 } from './constants'
 
-export async function testSingleLinkConnection(link) {
+export function createNewLink({ input, output, method }) {
+	return {
+		input,
+		output,
+		method,
+		created : Date.now()
+	}
+}
+
+
+export async function sendAndReceiveMessageToSingleLink(link, message, onMessage, timeout = 0) {
+	addMIDIMessageListenerToInput(link.input, onMessage)
+	sendMIDIToOutput(link.output, message[0], message[1], message[2])
+	await delay(timeout)
+	removeMIDIMessageListenerFromInput(link.input, onMessage)
+}
+
+export async function testSingleLinkConnectionByMessageEcho(link) {
+	logOpenCollapsed('Testing single link by "message echo"')
 	let connected = false
 	const key1 = Math.floor(Math.random() * 256)
 	const key2 = Math.floor(Math.random() * 256)
 	const fn = e => {
 		const message = fromMIDI(e.data)
 		if (message[1] === key1 && message[2] === key2) {
+			log(`Midi response received (expected ${key1}, ${key2})`, message[1], message[2])
 			connected = true
 		}
 	}
-	link.input.addEventListener('midimessage', fn)
-	sendMIDItoOutput(link.output, MIDI_COMMANDS.Sync, key1, key2)
-	await delay(30)
-	link.input.removeEventListener('midimessage', fn)
+	log(`Sending message: ${key1}, ${key2}`, link)
+	await sendAndReceiveMessageToSingleLink(link, [MIDI_COMMANDS.Sync, key1, key2], fn, 30)
+	if (!connected) {
+		log(`Never received midi response (expected ${key1}, ${key2})`)
+	}
+	logClose()
 	return connected
 }
 
@@ -58,10 +81,10 @@ export async function aquireSingleLinkUuid(link) {
 		}
 		uuid += char(message[1]) + char(message[2])
 	}
-	link.input.addEventListener('midimessage', fn)
-	sendMIDItoOutput(link.output, MIDI_COMMANDS.ReadUUID)
-	await delay(10)
-	link.input.removeEventListener('midimessage', fn)
+	await sendAndReceiveMessageToSingleLink(link, [MIDI_COMMANDS.ReadUUID], fn, 10)
+	while (uuid.length < 16) {
+		uuid += '*'
+	}
 	while (uuid.length > 16) {
 		uuid = uuid.slice(0, -1)
 	}
@@ -76,11 +99,11 @@ export async function aquireSingleLinkUuidWithConfidence(link) {
 	}
 	log('Raw uuids:', uuids)
 	const parts = uuids
-	.filter(uuid => uuid.length === 16)
-	.reduce((a, uuid) => {
-		uuid.split('').forEach((char, index) => a[index].push(char))
-		return a
-	}, [...Array(16)].map(() => []))
+		.filter(uuid => uuid.length === 16)
+		.reduce((a, uuid) => {
+			uuid.split('').forEach((char, index) => a[index].push(char))
+			return a
+		}, [...Array(16)].map(() => []))
 	const medianUuid = parts.map(s => arrayMedian(s)).join('')
 	log('Median uuid', medianUuid)
 	logClose()
@@ -100,10 +123,7 @@ export async function aquireSingleLinkBootloaderStatus(link) {
 			bootloaderStatus = false
 		}
 	}
-	link.input.addEventListener('midimessage', fn)
-	sendMIDItoOutput(link.output, MIDI_COMMANDS.ReadUUID)
-	await delay(3)
-	link.input.removeEventListener('midimessage', fn)
+	await sendAndReceiveMessageToSingleLink(link, [MIDI_COMMANDS.ReadUUID], fn, 10)
 	log('Bootloader status:', bootloaderStatus)
 	return bootloaderStatus
 }
@@ -136,7 +156,7 @@ export async function setSingleLinkMidiEnabledStatus(link) {
 
 export async function uploadHexToSingleLink(link, hexString, midiAccess) {
 	logOpen('Guarantee bootloader')
-	await guaranteeSingleLinkBootloaderMode(link, midiAccess)
+	await guaranteeSingleLinkEnterBootloaderMode(link, midiAccess)
 	logClose()
 
 	logOpen('Send firmware')
@@ -155,7 +175,23 @@ export async function uploadHexToSingleLink(link, hexString, midiAccess) {
 	await setSingleLinkMidiEnabledStatus(link)
 }
 
-export async function guaranteeSingleLinkBootloaderMode(link, midiAccess) {
+export async function guaranteeSingleLinkExitBootloaderMode(link, midiAccess) {
+	if (await aquireSingleLinkBootloaderStatusWithConfidence(link)) {
+		logOpen('Exit bootloader mode')
+		await exitSingleLinkBootloaderMode(link, midiAccess)
+		logClose()
+		logOpen('Confirm not on bootloader mode')
+		await setSingleLinkBootloaderStatus(link)
+		if (link.bootloader) {
+			throw new Error('Could not confirm that board is not on bootloader mode.')
+		}
+		logClose()
+	} else {
+		log('Already not on bootloader mode')
+	}
+}
+
+export async function guaranteeSingleLinkEnterBootloaderMode(link, midiAccess) {
 	if (!await aquireSingleLinkBootloaderStatusWithConfidence(link)) {
 		logOpen('Enter bootloader mode')
 		await enterSingleLinkBootloaderMode(link, midiAccess)
@@ -172,31 +208,33 @@ export async function guaranteeSingleLinkBootloaderMode(link, midiAccess) {
 }
 
 export async function enterSingleLinkBootloaderMode(link, midiAccess) {
-	await controlSingleLinkBootloaderMode(true, link, midiAccess)
+	return controlSingleLinkBootloaderMode(true, link, midiAccess)
 }
 
 export async function exitSingleLinkBootloaderMode(link, midiAccess) {
-	await controlSingleLinkBootloaderMode(false, link, midiAccess)
+	return controlSingleLinkBootloaderMode(false, link, midiAccess)
 }
 
 export async function controlSingleLinkBootloaderMode(bootloader, link, midiAccess) {
 	// Send the command for the board to enter/exit booloader mode
 	log('Send midi command')
-	sendMIDItoOutput(link.output, bootloader ? MIDI_COMMANDS.EnterBootloader : MIDI_COMMANDS.ExitBootloader)
+	sendMIDIToOutput(link.output, bootloader ? MIDI_COMMANDS.EnterBootloader : MIDI_COMMANDS.ExitBootloader)
 
 	// Wait for the connection disapear, and a new one to appear
 	logOpenCollapsed('Wait connections to appear/disapear')
 	const connectionHistory = await Promise.all([
-		waitForSingleLinkConnectionToDisapear(link, midiAccess),
+		// waitForSingleLinkConnectionToDisapear(link, midiAccess),
 		waitForSingleLinkConnectionToAppear(link, midiAccess)
 	])
-	log('Removed connections', connectionHistory[0])
-	log('Added connections', connectionHistory[1])
+	const addedConections = connectionHistory.pop()
+	// const removedConections = connectionHistory.pop()
+	log('Added connections', addedConections)
+	// log('Removed connections', removedConections)
 	logClose()
 
 	// Update the link connections
-	link.input = connectionHistory[1].input
-	link.output = connectionHistory[1].output
+	link.input = addedConections.input
+	link.output = addedConections.output
 }
 
 export async function waitForSingleLinkConnectionToDisapear(link, midiAccess) {
@@ -205,7 +243,7 @@ export async function waitForSingleLinkConnectionToDisapear(link, midiAccess) {
 	let tries = 0
 	let input = null
 	let output = null
-	while (tries < 100 && !input && !output) {
+	while (tries < 200 && (!input || !output)) {
 		logOpen('Disapear try', tries)
 		log('Original inputs', originalInputs)
 		log('Original outputs', originalOutputs)
@@ -230,12 +268,11 @@ export async function waitForSingleLinkConnectionToDisapear(link, midiAccess) {
 		await delay(100)
 	}
 
-	if (!output) {
-		throw new Error('Output never disapeared.')
+	if (!input && !output) {
+		log('NEVER disapeared')
+		throw new Error('Input or Output never disapeared.')
 	}
-	if (!input) {
-		throw new Error('Input never disapeared.')
-	}
+	log('disapeared')
 	return {
 		input  : link.input,
 		output : link.output
@@ -249,7 +286,7 @@ export async function waitForSingleLinkConnectionToAppear(link, midiAccess) {
 	let tries = 0
 	let input = null
 	let output = null
-	while (tries < 100 && !input && !output) {
+	while (tries < 200 && !input && !output) {
 		logOpen('Appear try', tries)
 		log('Original inputs', originalInputs)
 		log('Original outputs', originalOutputs)
@@ -275,14 +312,17 @@ export async function waitForSingleLinkConnectionToAppear(link, midiAccess) {
 	}
 
 	if (!output) {
+		log('NEVER appeared')
 		throw new Error('Output never appeared.')
 	}
-	link.output = output
+	// link.output = output
 
 	if (!input) {
+		log('NEVER appeared')
 		throw new Error('Input never appeared.')
 	}
-	link.input = input
+	log('appeared')
+	// link.input = input
 	return {
 		input,
 		output
@@ -290,11 +330,17 @@ export async function waitForSingleLinkConnectionToAppear(link, midiAccess) {
 }
 
 export async function sendFirmwareToSingleLinkWithConfidence(link, data) {
+	// TODO: find a way to send data with confidence. As there is a problem
+	// with Quirkbots on bootloader mode on Mac not firing onmidimessage, we
+	// cannot rely the testSingleLinkConnectionByMessageEcho to determine if
+	// the transmission is successfull
+
 	// Test if link is connected
-	let connected = await testSingleLinkConnection(link)
-	log('Test link connection, before', connected)
+	let connected = await testSingleLinkConnectionByMessageEcho(link)
+	log('Test link connection before upload', connected)
 	if (!connected) {
-		throw new Error('Link is not connected')
+		// throw new Error('Link is not connected')
+		log('Link not connected before upload. Doing nothing...', connected)
 	}
 
 	// Send the data
@@ -302,24 +348,21 @@ export async function sendFirmwareToSingleLinkWithConfidence(link, data) {
 
 	// Test if the link is still connected
 	await delay(30)
-	connected = await testSingleLinkConnection(link)
-	log('Test link connection, after', connected)
+	connected = await testSingleLinkConnectionByMessageEcho(link)
+	log('Test link connection, after upload', connected)
 	if (!connected) {
-		throw new Error('Link is not connected')
+		// throw new Error('Link is not connected')
+		log('Link not connected after upload. Doing nothing...', connected)
 	}
 }
 
 export async function sendFirmwareToSingleLink(link, data) {
 	log('Send StartFirmware command', 'Total bytes', data.length)
-	sendMIDItoOutput(link.output, MIDI_COMMANDS.StartFirmware)
+	sendMIDIToOutput(link.output, MIDI_COMMANDS.StartFirmware)
 	logOpenCollapsed('Data')
 	for (let i = 0; i < data.length; i += 2) {
 		log('Send Data command', data[i], data[i + 1])
-		sendMIDItoOutput(link.output, MIDI_COMMANDS.Data, data[i], data[i + 1])
-		if ((i % 1000) === 0) {
-			log('Delay')
-			await delay(10)
-		}
+		sendMIDIToOutput(link.output, MIDI_COMMANDS.Data, data[i], data[i + 1])
 	}
 	logClose()
 }

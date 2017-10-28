@@ -1,15 +1,23 @@
 <html>
 	<body>
+		<button id="enterbootloader">enter bootloader</button>
+		<button id="exitbootloader">exit bootloader</button>
 		<button id="upload1">firmware 1</button>
 		<button id="upload2">firmware 2</button>
 		<button id="verbose_on">verbose on</button>
 		<button id="verbose_off">verbose off</button>
 		<pre id="log"></pre>
 		<script src='http://cwilso.github.io/WebMIDIAPIShim/lib/WebMIDIAPI.js'></script>
-		<script src="build/qbmidi.js"></script>
+		<script src="../build/qbmidi.js"></script>
 		<script>
 			qbmidi.init()
 			qbmidi.verbose(true)
+			document.getElementById('enterbootloader').addEventListener('click', function() {
+				qbmidi.enterBootloaderMode(qbmidi.getLinks()[0])
+			})
+			document.getElementById('exitbootloader').addEventListener('click', function() {
+				qbmidi.exitBootloaderMode(qbmidi.getLinks()[0])
+			})
 			document.getElementById('upload1').addEventListener('click', function() {
 				qbmidi.uploadHexToLink(qbmidi.getLinks()[0], RESET_FIRMWARE1)
 			})
@@ -27,7 +35,9 @@
 					uuid : l.uuid,
 					uploading : l.uploading,
 					bootloader : l.bootloader,
-					midi :l.midi
+					midi :l.midi,
+					created :l.created,
+					method :l.method
 				})), null, '\t')
 			}, 200)
 		</script>

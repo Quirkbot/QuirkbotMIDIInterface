@@ -7,6 +7,18 @@ import {
 	tryToExecute
 } from './utils'
 
+const localStorageHash = {}
+let localStorage
+if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+	localStorage = window.localStorage
+} else {
+	localStorage = {
+		setItem    : (key, value) => localStorageHash[key] = value,
+		getItem    : key => localStorageHash[key] || null,
+		removeItem : key => delete localStorageHash[key]
+	}
+}
+
 const setLock = lock => localStorage.setItem('_qbmidi_lock_', JSON.stringify(lock))
 const getLock = () => JSON.parse(localStorage.getItem('_qbmidi_lock_'))
 const clearLock = () => localStorage.removeItem('_qbmidi_lock_')

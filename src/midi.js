@@ -1,20 +1,10 @@
-export const getMIDIAccess = () => new Promise((resolve, reject) => {
-	try {
-		window.navigator.requestMIDIAccess({ sysex : false })
-		.then(
-			access => {
-				if (!access) {
-					reject('No MIDI access was provided')
-					return
-				}
-				resolve(access)
-			},
-			reject
-		)
-	} catch (error) {
-		reject(error)
+export async function getMIDIAccess() {
+	const access = await navigator.requestMIDIAccess({ sysex : false })
+	if (!access) {
+		throw new Error('No MIDI access was provided')
 	}
-})
+	return access
+}
 
 export const toMIDI = payload => {
 	if (payload.length < 3) {
@@ -65,7 +55,40 @@ export const fromMIDI = payload => {
 	return [command, byte1, byte2]
 }
 
-export const sendMIDItoOutput = (output, c, b1, b2) => {
+const MIDIMessageListenerMap = new Map()
+export const addMIDIMessageListenerToInput = (input, fn) => {
+	let handle = MIDIMessageListenerMap.get(input)
+	if (!handle) {
+		const listeners = new Map()
+		const process = evt => {
+			listeners.forEach(listener => listener(evt))
+		}
+		input.onmidimessage = process
+		handle = { listeners, process }
+		MIDIMessageListenerMap.set(input, handle)
+	}
+
+	if (!handle.listeners.has(fn)) {
+		handle.listeners.set(fn, fn)
+	}
+}
+
+export const removeMIDIMessageListenerFromInput = (input, fn) => {
+	const handle = MIDIMessageListenerMap.get(input)
+	if (!handle) {
+		return
+	}
+
+	if (handle.listeners.has(fn)) {
+		handle.listeners.delete(fn)
+	}
+	if (!handle.listeners.size) {
+		MIDIMessageListenerMap.delete(input)
+		input.onmidimessage = null
+	}
+}
+
+export const sendMIDIToOutput = (output, c, b1, b2) => {
 	if (output.state !== 'connected') {
 		throw new Error('Output is not connected', output)
 	}
@@ -73,9 +96,12 @@ export const sendMIDItoOutput = (output, c, b1, b2) => {
 }
 
 export const filterValidConnections = map => {
-	const converted = []
+	const converted = Array.from(map.entries)
 	map.forEach(o => converted.push(o))
 	return converted
-		.filter(o => o.name === 'Quirkbot')
+		.filter(o =>
+			o.manufacturer.indexOf('Quirkbot') !== -1 ||
+			o.name.indexOf('Quirkbot') !== -1
+		)
 		.filter(o => o.state === 'connected')
 }

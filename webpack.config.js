@@ -13,6 +13,9 @@ module.exports = env => ({
 		libraryTarget  : 'umd',
 		umdNamedDefine : true
 	},
+	node : {
+		fs : 'empty'
+	},
 	module : {
 		rules : [
 			{
@@ -22,7 +25,7 @@ module.exports = env => ({
 			}
 		]
 	},
-	plugins : (env !== 'prod' && []) || [
+	/*plugins : (env !== 'prod' && []) || [
 		new webpack.optimize.UglifyJsPlugin()
-	]
+	]*/
 })
