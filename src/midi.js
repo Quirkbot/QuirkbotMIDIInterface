@@ -88,6 +88,14 @@ export const removeMIDIMessageListenerFromInput = (input, fn) => {
 	}
 }
 
+export const openMIDIPort = port => {
+	port.open()
+}
+
+export const closeMIDIPort = port => {
+	port.close()
+}
+
 export const sendMIDIToOutput = (output, c, b1, b2) => {
 	if (output.state !== 'connected') {
 		throw new Error('Output is not connected', output)

@@ -3,6 +3,8 @@ import {
 	arrayMedian,
 	delay,
 	pad,
+	safeWhile,
+	asyncSafeWhile,
 	tryToExecute
 } from './utils'
 
@@ -22,6 +24,8 @@ import {
 	addMIDIMessageListenerToInput,
 	removeMIDIMessageListenerFromInput,
 	sendMIDIToOutput,
+	openMIDIPort,
+	closeMIDIPort,
 	filterValidConnections
 } from './midi'
 
@@ -38,7 +42,6 @@ export function createNewLink({ input, output, method }) {
 		created : Date.now()
 	}
 }
-
 
 export async function sendAndReceiveMessageToSingleLink(link, message, onMessage, timeout = 0) {
 	addMIDIMessageListenerToInput(link.input, onMessage)
@@ -60,7 +63,12 @@ export async function testSingleLinkConnectionByMessageEcho(link) {
 		}
 	}
 	log(`Sending message: ${key1}, ${key2}`, link)
-	await sendAndReceiveMessageToSingleLink(link, [MIDI_COMMANDS.Sync, key1, key2], fn, 30)
+	try {
+		await sendAndReceiveMessageToSingleLink(link, [MIDI_COMMANDS.Sync, key1, key2], fn, 30)
+	} catch (e) {
+		log('Failed to receive message', e)
+	}
+
 	if (!connected) {
 		log(`Never received midi response (expected ${key1}, ${key2})`)
 	}
@@ -82,12 +90,18 @@ export async function aquireSingleLinkUuid(link) {
 		uuid += char(message[1]) + char(message[2])
 	}
 	await sendAndReceiveMessageToSingleLink(link, [MIDI_COMMANDS.ReadUUID], fn, 10)
-	while (uuid.length < 16) {
-		uuid += '*'
-	}
-	while (uuid.length > 16) {
-		uuid = uuid.slice(0, -1)
-	}
+
+	safeWhile(
+		() => uuid.length < 16,
+		() => uuid += '*',
+		() => uuid = '****************'
+	)
+
+	safeWhile(
+		() => uuid.length > 16,
+		() => uuid = uuid.slice(0, -1)
+	)
+
 	return uuid
 }
 
@@ -181,6 +195,10 @@ export async function guaranteeSingleLinkExitBootloaderMode(link, midiAccess) {
 		await exitSingleLinkBootloaderMode(link, midiAccess)
 		logClose()
 		logOpen('Confirm not on bootloader mode')
+		// Add a delay before trying to confirm bootloader status, as Quirkbot
+		// takes a few seconds to initialize (initial led blink animation), so
+		// we dont get a false positive
+		await delay(3000)
 		await setSingleLinkBootloaderStatus(link)
 		if (link.bootloader) {
 			throw new Error('Could not confirm that board is not on bootloader mode.')
@@ -208,28 +226,40 @@ export async function guaranteeSingleLinkEnterBootloaderMode(link, midiAccess) {
 }
 
 export async function enterSingleLinkBootloaderMode(link, midiAccess) {
-	return controlSingleLinkBootloaderMode(true, link, midiAccess)
+	await controlSingleLinkBootloaderMode(true, link, midiAccess)
 }
 
 export async function exitSingleLinkBootloaderMode(link, midiAccess) {
-	return controlSingleLinkBootloaderMode(false, link, midiAccess)
+	await controlSingleLinkBootloaderMode(false, link, midiAccess)
 }
 
 export async function controlSingleLinkBootloaderMode(bootloader, link, midiAccess) {
 	// Send the command for the board to enter/exit booloader mode
 	log('Send midi command')
 	sendMIDIToOutput(link.output, bootloader ? MIDI_COMMANDS.EnterBootloader : MIDI_COMMANDS.ExitBootloader)
+	closeMIDIPort(link.input)
+	closeMIDIPort(link.output)
 
 	// Wait for the connection disapear, and a new one to appear
 	logOpenCollapsed('Wait connections to appear/disapear')
-	const connectionHistory = await Promise.all([
-		// waitForSingleLinkConnectionToDisapear(link, midiAccess),
-		waitForSingleLinkConnectionToAppear(link, midiAccess)
-	])
-	const addedConections = connectionHistory.pop()
-	// const removedConections = connectionHistory.pop()
+	let addedConections
+	try {
+		const connectionHistory = await Promise.all([
+			waitForSingleLinkConnectionToAppear(link, midiAccess)
+		])
+		addedConections = connectionHistory.pop()
+	} catch (e) {
+		log('New connection never appeared, continuing with current', e)
+		addedConections = {
+			input  : link.input,
+			output : link.output
+		}
+	}
+
+	openMIDIPort(addedConections.input)
+	openMIDIPort(addedConections.output)
 	log('Added connections', addedConections)
-	// log('Removed connections', removedConections)
+
 	logClose()
 
 	// Update the link connections
@@ -237,92 +267,51 @@ export async function controlSingleLinkBootloaderMode(bootloader, link, midiAcce
 	link.output = addedConections.output
 }
 
-export async function waitForSingleLinkConnectionToDisapear(link, midiAccess) {
-	const originalInputs = [link.input]
-	const originalOutputs = [link.output]
-	let tries = 0
-	let input = null
-	let output = null
-	while (tries < 200 && (!input || !output)) {
-		logOpen('Disapear try', tries)
-		log('Original inputs', originalInputs)
-		log('Original outputs', originalOutputs)
-
-		const currentInputs = filterValidConnections(midiAccess.inputs)
-		input = input || arrayDiff(
-			originalInputs,
-			currentInputs
-		).shift()
-		log('Current inputs', currentInputs)
-
-		const currentOutputs = filterValidConnections(midiAccess.outputs)
-		output = output || arrayDiff(
-			originalOutputs,
-			currentOutputs
-		).shift()
-		log('Current outputs', currentOutputs)
-
-		logClose()
-
-		tries++
-		await delay(100)
-	}
-
-	if (!input && !output) {
-		log('NEVER disapeared')
-		throw new Error('Input or Output never disapeared.')
-	}
-	log('disapeared')
-	return {
-		input  : link.input,
-		output : link.output
-	}
-}
-
 export async function waitForSingleLinkConnectionToAppear(link, midiAccess) {
-	const originalInputs = filterValidConnections(midiAccess.inputs)
-	const originalOutputs = filterValidConnections(midiAccess.outputs)
+	log('Original input', link.input)
+	log('Original output', link.output)
 
 	let tries = 0
 	let input = null
 	let output = null
-	while (tries < 200 && !input && !output) {
-		logOpen('Appear try', tries)
-		log('Original inputs', originalInputs)
-		log('Original outputs', originalOutputs)
 
-		const currentInputs = filterValidConnections(midiAccess.inputs)
-		input = input || arrayDiff(
-			currentInputs,
-			originalInputs
-		).shift()
-		log('Current inputs', currentInputs)
+	await asyncSafeWhile(
+		async () => tries < 10 && !input && !output,
+		async () => {
+			logOpen('Appear try', tries)
 
-		const currentOutputs = filterValidConnections(midiAccess.outputs)
-		output = output || arrayDiff(
-			currentOutputs,
-			originalOutputs
-		).shift()
-		log('Current outputs', currentOutputs)
+			const currentInputs = filterValidConnections(midiAccess.inputs)
+			input = input || arrayDiff(
+				currentInputs,
+				[link.input]
+			).shift()
+			log('Current inputs', currentInputs)
 
-		logClose()
+			const currentOutputs = filterValidConnections(midiAccess.outputs)
+			output = output || arrayDiff(
+				currentOutputs,
+				[link.output]
+			).shift()
+			log('Current outputs', currentOutputs)
 
-		tries++
-		await delay(100)
-	}
+			logClose()
+
+			tries++
+			await delay(400)
+		}
+	)
 
 	if (!output) {
 		log('NEVER appeared')
 		throw new Error('Output never appeared.')
 	}
-	// link.output = output
 
 	if (!input) {
 		log('NEVER appeared')
 		throw new Error('Input never appeared.')
 	}
+	// We got new inputs!
 	log('appeared')
-	// link.input = input
 	return {
 		input,
 		output
@@ -360,9 +349,23 @@ export async function sendFirmwareToSingleLink(link, data) {
 	log('Send StartFirmware command', 'Total bytes', data.length)
 	sendMIDIToOutput(link.output, MIDI_COMMANDS.StartFirmware)
 	logOpenCollapsed('Data')
-	for (let i = 0; i < data.length; i += 2) {
-		log('Send Data command', data[i], data[i + 1])
-		sendMIDIToOutput(link.output, MIDI_COMMANDS.Data, data[i], data[i + 1])
+	try {
+		for (let i = 0; i < data.length; i += 2) {
+			log('Send Data command', data[i], data[i + 1])
+			sendMIDIToOutput(link.output, MIDI_COMMANDS.Data, data[i], data[i + 1])
+			// It seems that the data rate might be too fast for some platforms.
+			// After noticing problems on chromebooks, this delay make the upload
+			// more stable. Value calculated empiracally.
+			if (i % 1000 === 0) {
+				await delay(100)
+			}
+		}
+	} catch (e) {
+		// Catching this error here just to close the log, throw the error again
+		// so the parent process can catch it.
+		logClose()
+		throw e
 	}
+
 	logClose()
 }

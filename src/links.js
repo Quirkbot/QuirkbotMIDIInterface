@@ -9,12 +9,13 @@ import {
 import {
 	log,
 	logOpen,
-	logOpenCollapsed,
 	logClose,
 } from './log'
 
 import {
-	filterValidConnections
+	filterValidConnections,
+	openMIDIPort,
+	closeMIDIPort
 } from './midi'
 
 import {
@@ -64,20 +65,20 @@ export async function findPossibleLinksByMessageEcho(links, midiAccess) {
 		filterValidConnections(midiAccess.inputs),
 		links.map(link => link.input)
 	)
-	inputs.forEach(input => input.open())
+	inputs.forEach(openMIDIPort)
 	log('Valid inputs', inputs)
 
 	const outputs = arrayDiff(
 		filterValidConnections(midiAccess.outputs),
 		links.map(link => link.output)
 	)
-	outputs.forEach(output => output.open())
+	outputs.forEach(openMIDIPort)
 	log('Valid outputs', outputs)
 
 	// Pair all inputs with all outputs, in order to figure out which ones
 	// match each other
-	const possibleLinks = outputs.reduce((stash, output) =>
-		stash.concat(inputs.map(input => (
+	const possibleLinks = outputs.reduce((acc, output) =>
+		acc.concat(inputs.map(input => (
 			createNewLink({
 				input,
 				output,
@@ -101,13 +102,13 @@ export async function findPossibleLinksByMessageEcho(links, midiAccess) {
 		inputs,
 		newLinks.map(link => link.input)
 	)
-	invalidInputs.forEach(input => input.close())
+	invalidInputs.forEach(closeMIDIPort)
 
 	const invalidOutputs = arrayDiff(
 		outputs,
 		newLinks.map(link => link.output)
 	)
-	invalidOutputs.forEach(output => output.close())
+	invalidOutputs.forEach(closeMIDIPort)
 
 	// Finally, return the new links
 	return newLinks
@@ -119,14 +120,14 @@ export async function findPossibleLinksByNaivePairing(links, midiAccess) {
 		filterValidConnections(midiAccess.inputs),
 		links.map(link => link.input)
 	)
-	inputs.forEach(input => input.open())
+	inputs.forEach(openMIDIPort)
 	log('Valid inputs', inputs)
 
 	const outputs = arrayDiff(
 		filterValidConnections(midiAccess.outputs),
 		links.map(link => link.output)
 	)
-	outputs.forEach(output => output.open())
+	outputs.forEach(openMIDIPort)
 	log('Valid outputs', outputs)
 
 	// The only way we can assume with some confidence there is a link, is if
@@ -136,9 +137,56 @@ export async function findPossibleLinksByNaivePairing(links, midiAccess) {
 		newLinks.push(createNewLink({
 			input  : inputs[0],
 			output : outputs[0],
-			method : 'naive pairing'
+			method : 'naive pairing - single device'
 		}))
+	} else {
+		// If there are more than one link, we need to get creative on how to
+		// pair them...
+
+		// It seems that on mac, an input/output from the same device will have
+		// the same "version". So check if we can pair them by version
+		const reducePort = (acc, port) => {
+			if (!port) {
+				return acc
+			}
+			const version = port.version || '_'
+			if (typeof acc[version] === 'undefined') {
+				acc[version] = []
+			}
+			acc[version].push(port)
+			return acc
+		}
+		const inputsByVersion = inputs.reduce(reducePort, {})
+		const outputsByVersion = outputs.reduce(reducePort, {})
+
+		// If there is only one input and one output in the same version, we
+		// pair them together
+		Object.keys(inputsByVersion).forEach(version => {
+			if (inputsByVersion[version].length !== 1 || outputsByVersion[version].length !== 1) {
+				return
+			}
+			const input = inputsByVersion[version][0]
+			const output = outputsByVersion[version][0]
+			newLinks.push(createNewLink({
+				input,
+				output,
+				method : 'naive pairing - version'
+			}))
+		})
 	}
+
+	// Close the invalid connections
+	const invalidInputs = arrayDiff(
+		inputs,
+		newLinks.map(link => link.input)
+	)
+	invalidInputs.forEach(closeMIDIPort)
+
+	const invalidOutputs = arrayDiff(
+		outputs,
+		newLinks.map(link => link.output)
+	)
+	invalidOutputs.forEach(closeMIDIPort)
 
 	// Finally return the new links
 	return newLinks
