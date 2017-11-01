@@ -9,9 +9,9 @@ export const delay = m => new Promise(r => setTimeout(r, m))
 export const arrayMedian = s => {
 	const ordered = []
 	s.reduce((a, c) => a.set(c, (a.get(c) || 0) + 1), new Map())
-	.forEach((count, value) => ordered.push({
-		count, value
-	}))
+		.forEach((count, value) => ordered.push({
+			count, value
+		}))
 	ordered.sort((a, b) => a.count < b.count)
 	const median = ordered.shift()
 	if (median) {
@@ -65,6 +65,29 @@ export const safeWhile = (conditionFn, loopFn, errorFn, maxIterations) => {
 			break
 		}
 		loopFn(breakFn)
+	}
+}
+
+export const asyncSafeWhile = async (conditionFn, loopFn, errorFn, maxIterations) => {
+	maxIterations = maxIterations || 500
+	let count = 0
+	let forceBreak = false
+	const breakFn = () => forceBreak = true
+
+	if (typeof loopFn !== 'function') {
+		throw new Error('safeWhile: 2nd argument is not a function!')
+	}
+	while (await conditionFn()) {
+		count++
+		if (count > maxIterations) {
+			if (typeof errorFn === 'function') {
+				errorFn(new Error('Loop is stuck!'))
+			}
+			break
+		} else if (forceBreak) {
+			break
+		}
+		await loopFn(breakFn)
 	}
 }
 

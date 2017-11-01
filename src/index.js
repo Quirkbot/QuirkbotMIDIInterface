@@ -1,7 +1,8 @@
 import {
 	inPlaceArrayDiff,
 	inPlaceArrayConcat,
-	delay
+	delay,
+	asyncSafeWhile
 } from './utils'
 
 import {
@@ -84,9 +85,14 @@ export async function uploadHexToLink(link, hexString) {
 		hexString
 	}
 	pendingUploads.push(pendingUpload)
-	while (pendingUploads.includes(pendingUpload)) {
-		await delay(100)
-	}
+
+	asyncSafeWhile(
+		async () => pendingUploads.includes(pendingUpload),
+		async () => delay(100),
+		() => log('Pending uploads took too long to clear, exiting'),
+		600
+	)
+
 	if (pendingUpload.error) {
 		throw pendingUpload.error
 	}
@@ -106,9 +112,13 @@ export async function enterBootloaderMode(link) {
 		link
 	}
 	pendingEnterBootloaderMode.push(request)
-	while (pendingEnterBootloaderMode.includes(request)) {
-		await delay(100)
-	}
+	asyncSafeWhile(
+		async () => pendingEnterBootloaderMode.includes(request),
+		async () => delay(100),
+		() => log('Pending enter bootloader took too long to clear, exiting'),
+		600
+	)
+
 	if (request.error) {
 		throw request.error
 	}
@@ -128,9 +138,13 @@ export async function exitBootloaderMode(link) {
 		link
 	}
 	pendingExitBootloaderMode.push(request)
-	while (pendingExitBootloaderMode.includes(request)) {
-		await delay(100)
-	}
+	asyncSafeWhile(
+		async () => pendingExitBootloaderMode.includes(request),
+		async () => delay(100),
+		() => log('Pending exit bootloader took too long to clear, exiting'),
+		600
+	)
+
 	if (request.error) {
 		throw request.error
 	}
@@ -274,7 +288,7 @@ async function handleSinglePendingEnterBootloaderMode(request, requests, midiAcc
 		await guaranteeSingleLinkEnterBootloaderMode(request.link, midiAccess)
 		log('%cSuccess', 'color:green')
 	} catch (error) {
-		log('%cUpload error', 'color:red', error)
+		log('%cEnter Bootloader error', 'color:red', error)
 		request.error = error
 	}
 	request.link.enteringBootloaderMode = false
@@ -297,7 +311,7 @@ async function handleSinglePendingExitBootloaderMode(request, requests, midiAcce
 		await guaranteeSingleLinkExitBootloaderMode(request.link, midiAccess)
 		log('%cSuccess', 'color:green')
 	} catch (error) {
-		log('%cUpload error', 'color:red', error)
+		log('%Exit Bootloader error', 'color:red', error)
 		request.error = error
 	}
 	request.link.exitingBootloaderMode = false
