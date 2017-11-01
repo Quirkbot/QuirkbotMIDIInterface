@@ -1,5 +1,5 @@
 let count = 0
-let enabled = true
+let enabled = false
 
 
 export function enableLogs() {
