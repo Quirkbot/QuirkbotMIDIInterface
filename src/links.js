@@ -14,16 +14,20 @@ import {
 
 import {
 	filterValidConnections,
+	getMIDIInputs,
+	getMIDIOutputs,
 	openMIDIPort,
 	closeMIDIPort
 } from './midi'
 
 import {
-	arrayDiff
+	arrayDiff,
+	inPlaceArrayDiff,
+	asyncSafeWhile
 } from './utils'
 
 export async function findDeadLinks(links, midiAccess) {
-	const inputs = filterValidConnections(midiAccess.inputs)
+	const inputs = filterValidConnections(getMIDIInputs(midiAccess))
 	log('Current inputs', inputs)
 	return links.filter(link => !inputs.filter(input => link.input === input).length)
 }
@@ -62,14 +66,14 @@ export async function findPossibleLinks(links, midiAccess) {
 export async function findPossibleLinksByMessageEcho(links, midiAccess) {
 	// Get the valid connections that currently do not belong to any link
 	const inputs = arrayDiff(
-		filterValidConnections(midiAccess.inputs),
+		filterValidConnections(getMIDIInputs(midiAccess)),
 		links.map(link => link.input)
 	)
 	inputs.forEach(openMIDIPort)
 	log('Valid inputs', inputs)
 
 	const outputs = arrayDiff(
-		filterValidConnections(midiAccess.outputs),
+		filterValidConnections(getMIDIOutputs(midiAccess)),
 		links.map(link => link.output)
 	)
 	outputs.forEach(openMIDIPort)
@@ -89,13 +93,25 @@ export async function findPossibleLinksByMessageEcho(links, midiAccess) {
 	// Find the links by sending a message to the output and checking if the
 	// input responds with the same message
 	const newLinks = []
-	for (let i = 0; i < possibleLinks.length; i++) {
-		const link = possibleLinks[i]
-		const connected = await testSingleLinkConnectionByMessageEcho(link)
-		if (connected) {
-			newLinks.push(link)
+	await asyncSafeWhile(
+		async () => possibleLinks.length,
+		async () => {
+			const link = possibleLinks.pop()
+			const connected = await testSingleLinkConnectionByMessageEcho(link)
+			if (connected) {
+				// add the newly found link
+				newLinks.push(link)
+				// and remove the possible links that contain either the current
+				// input or output
+				for (let i = possibleLinks.length - 1; i >= 0; i--) {
+					const possibleLink = possibleLinks[i]
+					if (possibleLink.input === link.input || possibleLink.output === link.output) {
+						possibleLinks.splice(i, 1)
+					}
+				}
+			}
 		}
-	}
+	)
 
 	// Close the invalid connections
 	const invalidInputs = arrayDiff(
@@ -117,63 +133,91 @@ export async function findPossibleLinksByMessageEcho(links, midiAccess) {
 export async function findPossibleLinksByNaivePairing(links, midiAccess) {
 	// Get the valid connections that currently do not belong to any link
 	const inputs = arrayDiff(
-		filterValidConnections(midiAccess.inputs),
+		filterValidConnections(getMIDIInputs(midiAccess)),
 		links.map(link => link.input)
 	)
 	inputs.forEach(openMIDIPort)
 	log('Valid inputs', inputs)
 
 	const outputs = arrayDiff(
-		filterValidConnections(midiAccess.outputs),
+		filterValidConnections(getMIDIOutputs(midiAccess)),
 		links.map(link => link.output)
 	)
 	outputs.forEach(openMIDIPort)
 	log('Valid outputs', outputs)
 
-	// The only way we can assume with some confidence there is a link, is if
-	// there is a single input and a single output
 	const newLinks = []
-	if (inputs.length === 1 && outputs.length === 1) {
-		newLinks.push(createNewLink({
-			input  : inputs[0],
-			output : outputs[0],
-			method : 'naive pairing - single device'
-		}))
-	} else {
-		// If there are more than one link, we need to get creative on how to
-		// pair them...
+	const refInputs = inputs
+	const refOutputs = outputs
 
-		// It seems that on mac, an input/output from the same device will have
-		// the same "version". So check if we can pair them by version
-		const reducePort = (acc, port) => {
-			if (!port) {
-				return acc
-			}
-			const version = port.version || '_'
-			if (typeof acc[version] === 'undefined') {
-				acc[version] = []
-			}
-			acc[version].push(port)
-			return acc
-		}
-		const inputsByVersion = inputs.reduce(reducePort, {})
-		const outputsByVersion = outputs.reduce(reducePort, {})
-
-		// If there is only one input and one output in the same version, we
-		// pair them together
-		Object.keys(inputsByVersion).forEach(version => {
-			if (inputsByVersion[version].length !== 1 || outputsByVersion[version].length !== 1) {
+	await asyncSafeWhile(
+		async () => refInputs.length && refOutputs.length,
+		async () => {
+			// If there are only one link and only one output, we can pair them
+			// with confidence and exit
+			if (refInputs.length === 1 && refOutputs.length === 1) {
+				const input = refInputs[0]
+				const output = refOutputs[0]
+				inPlaceArrayDiff(refInputs, [input])
+				inPlaceArrayDiff(refOutputs, [output])
+				newLinks.push(createNewLink({
+					input,
+					output,
+					method : 'naive pairing - single device'
+				}))
 				return
 			}
-			const input = inputsByVersion[version][0]
-			const output = outputsByVersion[version][0]
-			newLinks.push(createNewLink({
-				input,
-				output,
-				method : 'naive pairing - version'
-			}))
-		})
-	}
+
+			// It seems that on mac, an input/output from the same device will have
+			// the same "version". So check if we can pair them by version
+			const reducePort = (acc, port) => {
+				if (!port) {
+					return acc
+				}
+				const version = port.version || '_'
+				if (typeof acc[version] === 'undefined') {
+					acc[version] = []
+				}
+				acc[version].push(port)
+				return acc
+			}
+			const inputsByVersion = refInputs.reduce(reducePort, {})
+			const outputsByVersion = refOutputs.reduce(reducePort, {})
+
+			// If there is only one input and one output in the same version, we
+			// pair them together
+			Object.keys(inputsByVersion).forEach(version => {
+				if (inputsByVersion[version].length !== 1 || outputsByVersion[version].length !== 1) {
+					return
+				}
+				const input = inputsByVersion[version][0]
+				const output = outputsByVersion[version][0]
+				inPlaceArrayDiff(refInputs, [input])
+				inPlaceArrayDiff(refOutputs, [output])
+				newLinks.push(createNewLink({
+					input,
+					output,
+					method : 'naive pairing - version'
+				}))
+			})
+
+			// Check if we were able to pair all the inputs. In case all are
+			// paired, exit. In case there is only one from each, also exit and
+			// they will be taken care of by the next while iteration.
+			// But in case there are still more than one from each, we need to
+			// try to pair them some other way...
+			if (refInputs.length < 2 || refOutputs.length < 2) {
+				return
+			}
+
+			// If we got this far an still cant pair them, give up
+			inPlaceArrayDiff(refInputs, refInputs)
+			inPlaceArrayDiff(refOutputs, refOutputs)
+		},
+		() => log('findPossibleLinksByNaivePairing got stuck'),
+		600
+	)
+
 
 	// Close the invalid connections
 	const invalidInputs = arrayDiff(

@@ -31,7 +31,7 @@ export async function lockThread(runtimeId) {
 	log('Initial lock value', lock)
 	if (lock && lock.ts) {
 		const age = Date.now() - lock.ts
-		if (age < 45000) {
+		if (age < 20000) {
 			throw new Error(`Thread already locked, age ${age}.`)
 		}
 	}

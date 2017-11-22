@@ -55,6 +55,10 @@ export const fromMIDI = payload => {
 	return [command, byte1, byte2]
 }
 
+export const getMIDIInputs = midiAccess => midiAccess.inputs
+
+export const getMIDIOutputs = midiAccess => midiAccess.outputs
+
 const MIDIMessageListenerMap = new Map()
 export const addMIDIMessageListenerToInput = (input, fn) => {
 	let handle = MIDIMessageListenerMap.get(input)
@@ -104,7 +108,7 @@ export const sendMIDIToOutput = (output, c, b1, b2) => {
 }
 
 export const filterValidConnections = map => {
-	const converted = Array.from(map.entries)
+	const converted = []
 	map.forEach(o => converted.push(o))
 	return converted
 		.filter(o =>

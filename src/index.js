@@ -36,15 +36,16 @@ import {
 /**
 * Globals
 */
+const mainLinksMap = new Map()
 const mainLinks = []
 const pendingUploads = []
 const pendingEnterBootloaderMode = []
 const pendingExitBootloaderMode = []
 
 export async function init() {
-	disableLogs()
 	try {
 		continuouslyMonitor(
+			mainLinksMap,
 			mainLinks,
 			pendingUploads,
 			pendingEnterBootloaderMode,
@@ -60,8 +61,16 @@ export function getLinks() {
 	return mainLinks
 }
 
+export function getLinksMap() {
+	return mainLinksMap
+}
+
 export function getLinkByUuid(uuid) {
 	return mainLinks.filter(l => l.uuid === uuid).pop()
+}
+
+export function getLinkByRuntimeId(runtimeId) {
+	return mainLinks.filter(l => l.runtimeId === runtimeId).pop()
 }
 
 export function verbose(value) {
@@ -86,7 +95,7 @@ export async function uploadHexToLink(link, hexString) {
 	}
 	pendingUploads.push(pendingUpload)
 
-	asyncSafeWhile(
+	await asyncSafeWhile(
 		async () => pendingUploads.includes(pendingUpload),
 		async () => delay(100),
 		() => log('Pending uploads took too long to clear, exiting'),
@@ -112,7 +121,7 @@ export async function enterBootloaderMode(link) {
 		link
 	}
 	pendingEnterBootloaderMode.push(request)
-	asyncSafeWhile(
+	await asyncSafeWhile(
 		async () => pendingEnterBootloaderMode.includes(request),
 		async () => delay(100),
 		() => log('Pending enter bootloader took too long to clear, exiting'),
@@ -138,7 +147,7 @@ export async function exitBootloaderMode(link) {
 		link
 	}
 	pendingExitBootloaderMode.push(request)
-	asyncSafeWhile(
+	await asyncSafeWhile(
 		async () => pendingExitBootloaderMode.includes(request),
 		async () => delay(100),
 		() => log('Pending exit bootloader took too long to clear, exiting'),
@@ -151,7 +160,7 @@ export async function exitBootloaderMode(link) {
 	return request.link
 }
 
-async function continuouslyMonitor(links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess) {
+async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess) {
 	const runtimeId = (Math.random() * 100000000000).toFixed(0)
 	logOpenCollapsed(`Monitor - Runtime ID: ${runtimeId}`)
 
@@ -159,11 +168,11 @@ async function continuouslyMonitor(links, uploads, enterBootloaderModes, exitBoo
 		log('Tab is not visible. Stopping task.')
 		logClose(true)
 		await delay(200 + (Math.random() * 100))
-		continuouslyMonitor(links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
+		continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 		return
 	}
 
-	logOpen('Lock Thread')
+	logOpenCollapsed('Lock Thread')
 	try {
 		await guaranteeLockThread(runtimeId)
 		log('Thread locked', runtimeId)
@@ -171,7 +180,7 @@ async function continuouslyMonitor(links, uploads, enterBootloaderModes, exitBoo
 		log(`Error trying to lock thread ${runtimeId}`, error)
 		logClose(true)
 		await delay(200 + (Math.random() * 100))
-		continuouslyMonitor(links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
+		continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 		return
 	}
 	logClose()
@@ -181,10 +190,11 @@ async function continuouslyMonitor(links, uploads, enterBootloaderModes, exitBoo
 	try {
 		removedLinks = await findDeadLinks(links, midiAccess)
 	} catch (error) {
-		console.log(error)
+		log(error)
 		removedLinks = []
 	}
 	inPlaceArrayDiff(links, removedLinks)
+	removedLinks.forEach(link => linksMap.delete(link))
 	logClose()
 
 	logOpen('Find new links')
@@ -192,18 +202,20 @@ async function continuouslyMonitor(links, uploads, enterBootloaderModes, exitBoo
 	try {
 		foundLinks = await findPossibleLinks(links, midiAccess)
 	} catch (error) {
-		console.log(error)
+		log(error)
 		foundLinks = []
 	}
+	inPlaceArrayConcat(links, foundLinks)
+	foundLinks.forEach(link => linksMap.set(link, link))
 	logClose()
 
-	inPlaceArrayConcat(links, foundLinks)
+	log('Links', links)
 
 	logOpen('Handle pending enter bootloader mode')
 	try {
 		await handlePendingEnterBootloaderModes(enterBootloaderModes, midiAccess)
 	} catch (error) {
-		console.log(error)
+		log(error)
 	}
 	logClose()
 
@@ -211,7 +223,7 @@ async function continuouslyMonitor(links, uploads, enterBootloaderModes, exitBoo
 	try {
 		await handlePendingExitBootloaderModes(exitBootloaderModes, midiAccess)
 	} catch (error) {
-		console.log(error)
+		log(error)
 	}
 	logClose()
 
@@ -219,13 +231,11 @@ async function continuouslyMonitor(links, uploads, enterBootloaderModes, exitBoo
 	try {
 		await handlePendingUploads(uploads, midiAccess)
 	} catch (error) {
-		console.log(error)
+		log(error)
 	}
 	logClose()
 
-	log('Links', links)
-
-	logOpen('Unlock Thread')
+	logOpenCollapsed('Unlock Thread')
 	try {
 		await unlockThread(runtimeId)
 		log('Thread unlocked', runtimeId)
@@ -233,7 +243,7 @@ async function continuouslyMonitor(links, uploads, enterBootloaderModes, exitBoo
 		logClose(true)
 		log('Error trying to unlock thread', error)
 		await delay(200 + (Math.random() * 100))
-		continuouslyMonitor(links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
+		continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 		return
 	}
 	logClose()
@@ -247,7 +257,7 @@ async function continuouslyMonitor(links, uploads, enterBootloaderModes, exitBoo
 	if (foundLinks.length) {
 		log('%cQuirkbots found', 'color:green', foundLinks)
 	}
-	continuouslyMonitor(links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
+	continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 }
 
 async function handlePendingUploads(uploads, midiAccess) {

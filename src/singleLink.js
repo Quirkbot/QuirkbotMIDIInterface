@@ -21,6 +21,8 @@ import {
 
 import {
 	fromMIDI,
+	getMIDIInputs,
+	getMIDIOutputs,
 	addMIDIMessageListenerToInput,
 	removeMIDIMessageListenerFromInput,
 	sendMIDIToOutput,
@@ -34,12 +36,15 @@ import {
 	PAGE_SIZE
 } from './constants'
 
+let LINK_RUNTIME_ID_FACTORY = 0
+
 export function createNewLink({ input, output, method }) {
 	return {
+		runtimeId : `${++LINK_RUNTIME_ID_FACTORY}-${Date.now()}`,
+		created   : Date.now(),
 		input,
 		output,
-		method,
-		created : Date.now()
+		method
 	}
 }
 
@@ -268,8 +273,10 @@ export async function controlSingleLinkBootloaderMode(bootloader, link, midiAcce
 }
 
 export async function waitForSingleLinkConnectionToAppear(link, midiAccess) {
-	log('Original input', link.input)
-	log('Original output', link.output)
+	const originalInputs = filterValidConnections(getMIDIInputs(midiAccess))
+	const originalOutputs = filterValidConnections(getMIDIOutputs(midiAccess))
+	log('Original inputs', originalInputs)
+	log('Original outputs', originalOutputs)
 
 	let tries = 0
 	let input = null
@@ -280,17 +287,17 @@ export async function waitForSingleLinkConnectionToAppear(link, midiAccess) {
 		async () => {
 			logOpen('Appear try', tries)
 
-			const currentInputs = filterValidConnections(midiAccess.inputs)
+			const currentInputs = filterValidConnections(getMIDIInputs(midiAccess))
 			input = input || arrayDiff(
 				currentInputs,
-				[link.input]
+				originalInputs
 			).shift()
 			log('Current inputs', currentInputs)
 
-			const currentOutputs = filterValidConnections(midiAccess.outputs)
+			const currentOutputs = filterValidConnections(getMIDIOutputs(midiAccess))
 			output = output || arrayDiff(
 				currentOutputs,
-				[link.output]
+				originalOutputs
 			).shift()
 			log('Current outputs', currentOutputs)
 
@@ -356,8 +363,8 @@ export async function sendFirmwareToSingleLink(link, data) {
 			// It seems that the data rate might be too fast for some platforms.
 			// After noticing problems on chromebooks, this delay make the upload
 			// more stable. Value calculated empiracally.
-			if (i % 1000 === 0) {
-				await delay(100)
+			if (i % 50 === 0) {
+				await delay(5)
 			}
 		}
 	} catch (e) {

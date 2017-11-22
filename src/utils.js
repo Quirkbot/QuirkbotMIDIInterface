@@ -22,13 +22,16 @@ export const arrayMedian = s => {
 
 export const arrayDiff = (a, b) => a.filter(o => !b.includes(o))
 
-export const inPlaceArrayDiff = (a, b) =>
-	a.forEach(o => {
-		const i = b.indexOf(o)
-		if (i !== -1) {
-			a.splice(i, 1)
+export const inPlaceArrayDiff = (a, b) => {
+	for (let i = a.length - 1; i >= 0; i--) {
+		const o = a[i]
+		const iB = b.indexOf(o)
+		if (iB !== -1) {
+			const iA = a.indexOf(o)
+			a.splice(iA, 1)
 		}
-	})
+	}
+}
 
 export const arrayMergeUnique = (a, b) => a.concat(arrayDiff(b, a))
 
