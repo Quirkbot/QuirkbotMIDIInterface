@@ -1,5 +1,5 @@
 export async function getMIDIAccess() {
-	const access = await navigator.requestMIDIAccess({ sysex : true })
+	const access = await navigator.requestMIDIAccess({ sysex : false })
 	if (!access) {
 		throw new Error('No MIDI access was provided')
 	}

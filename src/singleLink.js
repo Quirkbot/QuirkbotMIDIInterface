@@ -41,7 +41,7 @@ let LINK_RUNTIME_ID_FACTORY = 0
 export function createNewLink({ input, output, method }) {
 	return {
 		runtimeId : `${++LINK_RUNTIME_ID_FACTORY}-${Date.now()}`,
-		created   : Date.now(),
+		updated   : Date.now(),
 		input,
 		output,
 		method
@@ -173,6 +173,26 @@ export async function setSingleLinkMidiEnabledStatus(link) {
 	}
 }
 
+export async function updateSingleLinkInfoIfNeeded(link) {
+	// Dont update too frequently
+	if (Date.now() - link.updated < 5000) {
+		return
+	}
+	await updateSingleLinkInfo(link)
+}
+
+export async function updateSingleLinkInfo(link) {
+	// If the current uuid is undefined, don't overwrite it, in case we have
+	// one.
+	const currentUuid = await aquireSingleLinkUuidWithConfidence(link)
+	if (currentUuid !== '****************') {
+		link.uuid = currentUuid
+	}
+	await setSingleLinkBootloaderStatus(link)
+	await setSingleLinkMidiEnabledStatus(link)
+	link.updated = Date.now()
+}
+
 export async function uploadHexToSingleLink(link, hexString, midiAccess) {
 	logOpen('Guarantee bootloader')
 	await guaranteeSingleLinkEnterBootloaderMode(link, midiAccess)
@@ -189,9 +209,7 @@ export async function uploadHexToSingleLink(link, hexString, midiAccess) {
 	await exitSingleLinkBootloaderMode(link, midiAccess)
 	logClose()
 
-	await setSingleLinkUuid(link)
-	await setSingleLinkBootloaderStatus(link)
-	await setSingleLinkMidiEnabledStatus(link)
+	await updateSingleLinkInfo(link)
 }
 
 export async function guaranteeSingleLinkExitBootloaderMode(link, midiAccess) {
@@ -204,7 +222,7 @@ export async function guaranteeSingleLinkExitBootloaderMode(link, midiAccess) {
 		// takes a few seconds to initialize (initial led blink animation), so
 		// we dont get a false positive
 		await delay(3000)
-		await setSingleLinkBootloaderStatus(link)
+		await updateSingleLinkInfo(link)
 		if (link.bootloader) {
 			throw new Error('Could not confirm that board is not on bootloader mode.')
 		}
@@ -220,7 +238,7 @@ export async function guaranteeSingleLinkEnterBootloaderMode(link, midiAccess) {
 		await enterSingleLinkBootloaderMode(link, midiAccess)
 		logClose()
 		logOpen('Confirm bootloader mode')
-		await setSingleLinkBootloaderStatus(link)
+		await updateSingleLinkInfo(link)
 		if (!link.bootloader) {
 			throw new Error('Could not confirm that board is on bootloader mode.')
 		}

@@ -11,7 +11,8 @@ import {
 	logOpenCollapsed,
 	logClose,
 	enableLogs,
-	disableLogs
+	disableLogs,
+	setCustomLogHandler
 } from './log'
 
 import {
@@ -25,6 +26,7 @@ import {
 import {
 	findDeadLinks,
 	findPossibleLinks,
+	updateLinksInfoIfNeeded
 } from './links'
 
 import {
@@ -41,6 +43,8 @@ const mainLinks = []
 const pendingUploads = []
 const pendingEnterBootloaderMode = []
 const pendingExitBootloaderMode = []
+
+export { enableLogs, disableLogs, setCustomLogHandler }
 
 export async function init() {
 	try {
@@ -71,13 +75,6 @@ export function getLinkByUuid(uuid) {
 
 export function getLinkByRuntimeId(runtimeId) {
 	return mainLinks.filter(l => l.runtimeId === runtimeId).pop()
-}
-
-export function verbose(value) {
-	if (value) {
-		return enableLogs()
-	}
-	return disableLogs()
 }
 
 export async function uploadHexToLink(link, hexString) {
@@ -195,6 +192,7 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 	}
 	inPlaceArrayDiff(links, removedLinks)
 	removedLinks.forEach(link => linksMap.delete(link))
+	log('Removed links', removedLinks)
 	logClose()
 
 	logOpen('Find new links')
@@ -207,9 +205,18 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 	}
 	inPlaceArrayConcat(links, foundLinks)
 	foundLinks.forEach(link => linksMap.set(link, link))
+	log('Found links', foundLinks)
 	logClose()
 
-	log('Links', links)
+	log('Current links', links)
+
+	// logOpen('Update links info (if needed)')
+	// try {
+	// 	await updateLinksInfoIfNeeded(links)
+	// } catch (error) {
+	// 	log(error)
+	// }
+	// logClose()
 
 	logOpen('Handle pending enter bootloader mode')
 	try {

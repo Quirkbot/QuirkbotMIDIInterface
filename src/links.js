@@ -3,6 +3,8 @@ import {
 	setSingleLinkUuid,
 	setSingleLinkBootloaderStatus,
 	setSingleLinkMidiEnabledStatus,
+	updateSingleLinkInfo,
+	updateSingleLinkInfoIfNeeded,
 	createNewLink
 } from './singleLink'
 
@@ -234,6 +236,14 @@ export async function findPossibleLinksByNaivePairing(links, midiAccess) {
 
 	// Finally return the new links
 	return newLinks
+}
+
+export async function updateLinksInfo(links) {
+	await Promise.all(links.map(updateSingleLinkInfo))
+}
+
+export async function updateLinksInfoIfNeeded(links) {
+	await Promise.all(links.map(updateSingleLinkInfoIfNeeded))
 }
 
 export async function setLinksUuid(links) {

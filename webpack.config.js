@@ -1,5 +1,5 @@
 const path = require('path')
-const webpack = require('webpack')
+const MinifyPlugin = require('babel-minify-webpack-plugin')
 
 const NAMESPACE = 'qbmidi'
 
@@ -25,7 +25,7 @@ module.exports = env => ({
 			}
 		]
 	},
-	/*plugins : (env !== 'prod' && []) || [
-		new webpack.optimize.UglifyJsPlugin()
-	]*/
+	plugins : (env !== 'prod' && []) || [
+		new MinifyPlugin()
+	]
 })
