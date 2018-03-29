@@ -21,6 +21,7 @@ export function log(...args) {
 	if (customHandler) {
 		customHandler({ type : 'log', args })
 	} else {
+		// eslint-disable-next-line no-console
 		console.log.apply(null, args)
 	}
 }
@@ -32,6 +33,7 @@ export function logError(...args) {
 	if (customHandler) {
 		customHandler({ type : 'error', args })
 	} else {
+		// eslint-disable-next-line no-console
 		console.error.apply(null, args)
 	}
 }
@@ -44,6 +46,7 @@ export function logOpen(...args) {
 	if (customHandler) {
 		customHandler({ type : 'group', args })
 	} else {
+		// eslint-disable-next-line no-console
 		console.group.apply(null, args)
 	}
 }
@@ -56,6 +59,7 @@ export function logOpenCollapsed(...args) {
 	if (customHandler) {
 		customHandler({ type : 'groupCollapsed', args })
 	} else {
+		// eslint-disable-next-line no-console
 		console.groupCollapsed.apply(null, args)
 	}
 }
@@ -66,6 +70,7 @@ export function logClose(all) {
 		if (customHandler) {
 			customHandler({ type : 'groupEnd' })
 		} else {
+			// eslint-disable-next-line no-console
 			console.groupEnd()
 		}
 	}

@@ -291,38 +291,40 @@ export async function controlSingleLinkBootloaderMode(bootloader, link, midiAcce
 }
 
 export async function waitForSingleLinkConnectionToAppear(link, midiAccess) {
-	const originalInputs = filterValidConnections(getMIDIInputs(midiAccess))
-	const originalOutputs = filterValidConnections(getMIDIOutputs(midiAccess))
-	log('Original inputs', originalInputs)
-	log('Original outputs', originalOutputs)
+	let lastInputs = filterValidConnections(getMIDIInputs(midiAccess))
+	let lastOutputs = filterValidConnections(getMIDIOutputs(midiAccess))
+	log('Original inputs', lastInputs)
+	log('Original outputs', lastOutputs)
 
 	let tries = 0
 	let input = null
 	let output = null
 
 	await asyncSafeWhile(
-		async () => tries < 10 && !input && !output,
+		async () => tries < 40 && !input && !output,
 		async () => {
 			logOpen('Appear try', tries)
 
 			const currentInputs = filterValidConnections(getMIDIInputs(midiAccess))
 			input = input || arrayDiff(
 				currentInputs,
-				originalInputs
+				lastInputs
 			).shift()
+			lastInputs = currentInputs
 			log('Current inputs', currentInputs)
 
 			const currentOutputs = filterValidConnections(getMIDIOutputs(midiAccess))
 			output = output || arrayDiff(
 				currentOutputs,
-				originalOutputs
+				lastOutputs
 			).shift()
+			lastOutputs = currentOutputs
 			log('Current outputs', currentOutputs)
 
 			logClose()
 
 			tries++
-			await delay(400)
+			await delay(100)
 		}
 	)
 
@@ -335,7 +337,7 @@ export async function waitForSingleLinkConnectionToAppear(link, midiAccess) {
 		log('NEVER appeared')
 		throw new Error('Input never appeared.')
 	}
-	// We got new inputs!
+	// We got new inputs and outputs!
 	log('appeared')
 	return {
 		input,
@@ -383,6 +385,9 @@ export async function sendFirmwareToSingleLink(link, data) {
 			// more stable. Value calculated empiracally.
 			if (i % 50 === 0) {
 				await delay(5)
+			}
+			if (i % 1000 === 0) {
+				await delay(1000)
 			}
 		}
 	} catch (e) {

@@ -26,7 +26,7 @@ import {
 import {
 	findDeadLinks,
 	findPossibleLinks,
-	updateLinksInfoIfNeeded
+	// updateLinksInfoIfNeeded
 } from './links'
 
 import {
@@ -57,7 +57,7 @@ export async function init() {
 			await getMIDIAccess()
 		)
 	} catch (error) {
-		log(error)
+		log('Could not init', error)
 	}
 }
 

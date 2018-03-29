@@ -10,6 +10,7 @@ import {
 const localStorageHash = {}
 let localStorage
 if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+	// eslint-disable-next-line prefer-destructuring
 	localStorage = window.localStorage
 } else {
 	localStorage = {

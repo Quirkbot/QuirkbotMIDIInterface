@@ -1,7 +1,8 @@
 import {
 	Buffer
 } from 'buffer/'
-/**
+/* eslint-disable no-buffer-constructor */
+/*
 The MIT License (MIT)
 
 Copyright (c) 2013. Blake C. Miner. http://blakeminer.com
@@ -24,10 +25,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-**/
+ */
 
 // Intel Hex record types
-const DATA = 0;
+const DATA = 0
 const END_OF_FILE = 1
 const EXT_SEGMENT_ADDR = 2
 const START_SEGMENT_ADDR = 3
@@ -56,17 +57,17 @@ export const parseIntelHex = (data, bufferSize) => {
 	// Initialization
 	let buf = new Buffer(bufferSize || 8192) // Current position in the Intel Hex string
 
-	let // Length of data in the buffer
-	bufLength = 0
+	// Length of data in the buffer
+	let bufLength = 0
 
-	let // upper address
-	highAddress = 0
+	// upper address
+	let highAddress = 0
 
 	let startSegmentAddress = null
 	let startLinearAddress = null
 
-	let // Line number in the Intel Hex string
-	lineNum = 0
+	// Line number in the Intel Hex string
+	let lineNum = 0
 
 	let pos = 0
 	const SMALLEST_LINE = 11
@@ -110,7 +111,7 @@ export const parseIntelHex = (data, bufferSize) => {
 
 		// Parse the record based on its recordType
 		switch (recordType)	{
-			case DATA:
+			case DATA: {
 				const absoluteAddress = highAddress + lowAddress
 				// Expand buf, if necessary
 				if (absoluteAddress + dataLength >= buf.length) {
@@ -127,6 +128,7 @@ export const parseIntelHex = (data, bufferSize) => {
 				dataFieldBuf.copy(buf, absoluteAddress)
 				bufLength = Math.max(bufLength, absoluteAddress + dataLength)
 				break
+			}
 			case END_OF_FILE:
 				if (dataLength !== 0) {
 					throw new Error(`Invalid EOF record on line ${lineNum}.`)

@@ -2,7 +2,7 @@
   "name": "quirkbot-midi-interface",
   "version": "0.0.0",
   "description": "",
-  "author": "",
+  "author": "Paulo Barcelos <paulo@strawbees.com>",
   "main": "build/qbmidi.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",

@@ -1,10 +1,22 @@
-export async function getMIDIAccess() {
-	const access = await navigator.requestMIDIAccess({ sysex : false })
-	if (!access) {
-		throw new Error('No MIDI access was provided')
-	}
-	return access
-}
+export const getMIDIAccess = () => new Promise((resolve, reject) => {
+	const timeout = setTimeout(
+		() => {
+			reject(new Error('Timeout requesting MIDI access'))
+		},
+		3000
+	)
+	navigator.requestMIDIAccess({ sysex : false })
+		.then(access => {
+			clearTimeout(timeout)
+			if (!access) {
+				reject(new Error('No MIDI access was provided'))
+				return null
+			}
+			return access
+		})
+		.then(resolve)
+		.catch(reject)
+})
 
 export const toMIDI = payload => {
 	if (payload.length < 3) {
