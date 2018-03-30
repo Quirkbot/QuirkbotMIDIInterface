@@ -1,6 +1,6 @@
 {
   "name": "quirkbot-midi-interface",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "",
   "author": "Paulo Barcelos <paulo@strawbees.com>",
   "main": "build/qbmidi.js",
