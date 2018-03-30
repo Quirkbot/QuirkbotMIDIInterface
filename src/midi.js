@@ -1,3 +1,7 @@
+import {
+	delay
+} from './utils'
+
 export const getMIDIAccess = () => new Promise((resolve, reject) => {
 	const timeout = setTimeout(
 		() => {
@@ -112,11 +116,23 @@ export const closeMIDIPort = port => {
 	port.close()
 }
 
-export const sendMIDIToOutput = (output, c, b1, b2) => {
+export async function sendMIDIToOutput(output, c, b1, b2, blockTime = 1) {
 	if (output.state !== 'connected') {
 		throw new Error('Output is not connected', output)
 	}
-	output.send(toMIDI([c, b1, b2]))
+	scheduledSendMIDIToOutput(
+		output,
+		c, b1, b2,
+		window.performance.now() + blockTime
+	)
+	await delay(blockTime)
+}
+
+export const scheduledSendMIDIToOutput = (output, c, b1, b2, timestamp = 0) => {
+	if (output.state !== 'connected') {
+		throw new Error('Output is not connected', output)
+	}
+	output.send(toMIDI([c, b1, b2]), timestamp)
 }
 
 export const filterValidConnections = map => {

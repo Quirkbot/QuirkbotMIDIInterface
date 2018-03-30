@@ -26,6 +26,7 @@ import {
 	addMIDIMessageListenerToInput,
 	removeMIDIMessageListenerFromInput,
 	sendMIDIToOutput,
+	scheduledSendMIDIToOutput,
 	openMIDIPort,
 	closeMIDIPort,
 	filterValidConnections
@@ -50,7 +51,7 @@ export function createNewLink({ input, output, method }) {
 
 export async function sendAndReceiveMessageToSingleLink(link, message, onMessage, timeout = 0) {
 	addMIDIMessageListenerToInput(link.input, onMessage)
-	sendMIDIToOutput(link.output, message[0], message[1], message[2])
+	await sendMIDIToOutput(link.output, message[0], message[1], message[2])
 	await delay(timeout)
 	removeMIDIMessageListenerFromInput(link.input, onMessage)
 }
@@ -94,7 +95,7 @@ export async function aquireSingleLinkUuid(link) {
 		}
 		uuid += char(message[1]) + char(message[2])
 	}
-	await sendAndReceiveMessageToSingleLink(link, [MIDI_COMMANDS.ReadUUID], fn, 10)
+	await sendAndReceiveMessageToSingleLink(link, [MIDI_COMMANDS.ReadUUID], fn, 5)
 
 	safeWhile(
 		() => uuid.length < 16,
@@ -113,7 +114,7 @@ export async function aquireSingleLinkUuid(link) {
 export async function aquireSingleLinkUuidWithConfidence(link) {
 	const uuids = []
 	logOpenCollapsed('Aquiring uuids')
-	for (let i = 0; i < 100; i++) {
+	for (let i = 0; i < 50; i++) {
 		uuids.push(await aquireSingleLinkUuid(link))
 	}
 	log('Raw uuids:', uuids)
@@ -259,7 +260,7 @@ export async function exitSingleLinkBootloaderMode(link, midiAccess) {
 export async function controlSingleLinkBootloaderMode(bootloader, link, midiAccess) {
 	// Send the command for the board to enter/exit booloader mode
 	log('Send midi command')
-	sendMIDIToOutput(link.output, bootloader ? MIDI_COMMANDS.EnterBootloader : MIDI_COMMANDS.ExitBootloader)
+	await sendMIDIToOutput(link.output, bootloader ? MIDI_COMMANDS.EnterBootloader : MIDI_COMMANDS.ExitBootloader)
 	closeMIDIPort(link.input)
 	closeMIDIPort(link.output)
 
@@ -373,22 +374,25 @@ export async function sendFirmwareToSingleLinkWithConfidence(link, data) {
 }
 
 export async function sendFirmwareToSingleLink(link, data) {
-	log('Send StartFirmware command', 'Total bytes', data.length)
-	sendMIDIToOutput(link.output, MIDI_COMMANDS.StartFirmware)
+	const totalBytes = data.length
+	const speedRate = 4 // 4 empirically found best value
+	const estimatedDuration = (totalBytes / speedRate) + 1000
+	log('Send StartFirmware command', 'Total bytes', totalBytes)
+	log('Transfer estimated duration', estimatedDuration)
+	await sendMIDIToOutput(
+		link.output,
+		MIDI_COMMANDS.StartFirmware, 0, 0
+	)
+	const transferStartRef = window.performance.now() + 100
 	logOpenCollapsed('Data')
 	try {
 		for (let i = 0; i < data.length; i += 2) {
-			log('Send Data command', data[i], data[i + 1])
-			sendMIDIToOutput(link.output, MIDI_COMMANDS.Data, data[i], data[i + 1])
-			// It seems that the data rate might be too fast for some platforms.
-			// After noticing problems on chromebooks, this delay make the upload
-			// more stable. Value calculated empiracally.
-			if (i % 50 === 0) {
-				await delay(5)
-			}
-			if (i % 1000 === 0) {
-				await delay(1000)
-			}
+			// log('Send Data command', data[i], data[i + 1])
+			scheduledSendMIDIToOutput(
+				link.output,
+				MIDI_COMMANDS.Data, data[i], data[i + 1],
+				transferStartRef + (i / speedRate)
+			)
 		}
 	} catch (e) {
 		// Catching this error here just to close the log, throw the error again
@@ -396,6 +400,9 @@ export async function sendFirmwareToSingleLink(link, data) {
 		logClose()
 		throw e
 	}
-
 	logClose()
+	const remainingTime = estimatedDuration - (window.performance.now() - transferStartRef)
+	log('Waiting remaining estimated time...', remainingTime)
+	await delay(remainingTime)
+	log('Transfer complete!')
 }
