@@ -1,7 +1,6 @@
 import {
 	Buffer
 } from 'buffer/'
-/* eslint-disable no-buffer-constructor */
 /*
 The MIT License (MIT)
 
@@ -55,7 +54,7 @@ export const parseIntelHex = (data, bufferSize) => {
 	}
 
 	// Initialization
-	let buf = new Buffer(bufferSize || 8192) // Current position in the Intel Hex string
+	let buf = Buffer.alloc(bufferSize || 8192) // Current position in the Intel Hex string
 
 	// Length of data in the buffer
 	let bufLength = 0
@@ -92,7 +91,7 @@ export const parseIntelHex = (data, bufferSize) => {
 		// Data field (hex-encoded string)
 		const dataField = data.substr(pos, dataLength * 2)
 
-		const dataFieldBuf = new Buffer(dataField, 'hex')
+		const dataFieldBuf = Buffer.from(dataField, 'hex')
 		pos += dataLength * 2
 		// Checksum
 		const checksum = parseInt(data.substr(pos, 2), 16)
@@ -115,7 +114,7 @@ export const parseIntelHex = (data, bufferSize) => {
 				const absoluteAddress = highAddress + lowAddress
 				// Expand buf, if necessary
 				if (absoluteAddress + dataLength >= buf.length) {
-					const tmp = new Buffer((absoluteAddress + dataLength) * 2)
+					const tmp = Buffer.alloc((absoluteAddress + dataLength) * 2)
 					buf.copy(tmp, 0, 0, bufLength)
 					buf = tmp
 				}
