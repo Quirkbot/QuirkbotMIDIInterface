@@ -7,7 +7,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "webpack --mode=production",
-    "develop": "webpack --watch --mode=development"
+    "develop": "webpack --watch --mode=development",
+    "prepublishOnly" : "build"
   },
   "devDependencies": {
     "babel-core": "^6.26.0",
