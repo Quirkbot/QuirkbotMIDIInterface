@@ -1,6 +1,6 @@
 {
   "name": "quirkbot-midi-interface",
-  "version": "0.0.1",
+  "version": "0.0.1-1",
   "description": "",
   "author": "Paulo Barcelos <paulo@strawbees.com>",
   "main": "build/qbmidi.js",
@@ -8,7 +8,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "webpack --mode=production",
     "develop": "webpack --watch --mode=development",
-    "prepublishOnly" : "webpack --mode=production"
+    "prepublishOnly": "webpack --mode=production"
   },
   "devDependencies": {
     "babel-core": "^6.26.0",
