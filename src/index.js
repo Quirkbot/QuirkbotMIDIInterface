@@ -43,11 +43,17 @@ const mainLinks = []
 const pendingUploads = []
 const pendingEnterBootloaderMode = []
 const pendingExitBootloaderMode = []
+let monitoring = false
 
 export { enableLogs, disableLogs, setCustomLogHandler }
 
 export async function init() {
+	if (monitoring) {
+		log('Already init')
+		return
+	}
 	try {
+		monitoring = true
 		continuouslyMonitor(
 			mainLinksMap,
 			mainLinks,
@@ -57,8 +63,13 @@ export async function init() {
 			await getMIDIAccess()
 		)
 	} catch (error) {
+		monitoring = false
 		log('Could not init', error)
 	}
+}
+
+export function destroy() {
+	monitoring = false
 }
 
 export function getLinks() {
@@ -158,6 +169,10 @@ export async function exitBootloaderMode(link) {
 }
 
 async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess) {
+	if (!monitoring) {
+		log('Monitoring disabled. Call init() to start')
+		return
+	}
 	const runtimeId = (Math.random() * 100000000000).toFixed(0)
 	logOpenCollapsed(`Monitor - Runtime ID: ${runtimeId}`)
 

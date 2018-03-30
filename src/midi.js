@@ -2,7 +2,13 @@ import {
 	delay
 } from './utils'
 
+let globalAccess
+
 export const getMIDIAccess = () => new Promise((resolve, reject) => {
+	if (globalAccess) {
+		resolve(globalAccess)
+		return
+	}
 	const timeout = setTimeout(
 		() => {
 			reject(new Error('Timeout requesting MIDI access'))
@@ -16,6 +22,7 @@ export const getMIDIAccess = () => new Promise((resolve, reject) => {
 				reject(new Error('No MIDI access was provided'))
 				return null
 			}
+			globalAccess = access
 			return access
 		})
 		.then(resolve)
