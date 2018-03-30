@@ -151,7 +151,7 @@ export async function aquireSingleLinkBootloaderStatus(link) {
 export async function aquireSingleLinkBootloaderStatusWithConfidence(link) {
 	const bootloaderStatuses = []
 	logOpenCollapsed('Aquiring bootloader status')
-	for (let i = 0; i < 20; i++) {
+	for (let i = 0; i < 10; i++) {
 		bootloaderStatuses.push(await aquireSingleLinkBootloaderStatus(link))
 	}
 	const medianBootloaderStatus = arrayMedian(bootloaderStatuses)
@@ -234,19 +234,21 @@ export async function guaranteeSingleLinkExitBootloaderMode(link, midiAccess) {
 }
 
 export async function guaranteeSingleLinkEnterBootloaderMode(link, midiAccess) {
-	if (!await aquireSingleLinkBootloaderStatusWithConfidence(link)) {
-		logOpen('Enter bootloader mode')
-		await enterSingleLinkBootloaderMode(link, midiAccess)
-		logClose()
-		logOpen('Confirm bootloader mode')
-		await updateSingleLinkInfo(link)
-		if (!link.bootloader) {
-			throw new Error('Could not confirm that board is on bootloader mode.')
-		}
-		logClose()
-	} else {
-		log('Already on bootloader mode')
+	// Avoiding to check if the board is already on bootloader mode (what
+	// enables us to quick exit this function) because its so much harder to
+	// realibly detect if the board is on bootloader mode (the opposite is much
+	// more realiable). So we will go ahead and force the board to go on
+	// booloader mode anyway - if it already was, the process will work
+	// regardless and will just be a little slower. OK compromise.
+	logOpen('Enter bootloader mode')
+	await enterSingleLinkBootloaderMode(link, midiAccess)
+	logClose()
+	logOpen('Confirm bootloader mode')
+	await updateSingleLinkInfo(link)
+	if (!link.bootloader) {
+		throw new Error('Could not confirm that board is on bootloader mode.')
 	}
+	logClose()
 }
 
 export async function enterSingleLinkBootloaderMode(link, midiAccess) {
