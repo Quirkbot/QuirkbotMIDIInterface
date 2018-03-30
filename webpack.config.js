@@ -1,13 +1,13 @@
 const path = require('path')
-const MinifyPlugin = require('babel-minify-webpack-plugin')
+// const MinifyPlugin = require('babel-minify-webpack-plugin')
 
 const NAMESPACE = 'qbmidi'
 
-module.exports = env => ({
+module.exports = () => ({
 	entry  : path.join(__dirname, 'src', 'index.js'),
 	output : {
 		path           : path.join(__dirname, 'build'),
-		filename       : (env !== 'prod') ? `${NAMESPACE}.js` : `${NAMESPACE}.min.js`,
+		filename       : `${NAMESPACE}.js`,
 		publicPath     : 'build/',
 		library        : NAMESPACE,
 		libraryTarget  : 'umd',
@@ -25,7 +25,7 @@ module.exports = env => ({
 			}
 		]
 	},
-	plugins : (env !== 'prod' && []) || [
+	/* plugins : (env !== 'prod' && []) || [
 		new MinifyPlugin()
-	]
+	] */
 })
