@@ -377,7 +377,7 @@ export async function sendFirmwareToSingleLinkWithConfidence(link, data) {
 
 export async function sendFirmwareToSingleLink(link, data) {
 	const totalBytes = data.length
-	const speedRate = 4 // 4 empirically found best value
+	const speedRate = 8 // 4 empirically found best value
 	const estimatedDuration = (totalBytes / speedRate) + 1000
 	log('Send StartFirmware command', 'Total bytes', totalBytes)
 	log('Transfer estimated duration', estimatedDuration)
@@ -386,23 +386,23 @@ export async function sendFirmwareToSingleLink(link, data) {
 		MIDI_COMMANDS.StartFirmware, 0, 0
 	)
 	const transferStartRef = window.performance.now() + 100
-	logOpenCollapsed('Data')
+	//logOpenCollapsed('Data')
 	try {
 		for (let i = 0; i < data.length; i += 2) {
-			// log('Send Data command', data[i], data[i + 1])
-			scheduledSendMIDIToOutput(
+			//log('Send Data command', data[i], data[i + 1])
+			sendMIDIToOutput(
 				link.output,
 				MIDI_COMMANDS.Data, data[i], data[i + 1],
-				transferStartRef + (i / speedRate)
+				//transferStartRef + (i / speedRate)
 			)
 		}
 	} catch (e) {
 		// Catching this error here just to close the log, throw the error again
 		// so the parent process can catch it.
-		logClose()
+		//logClose()
 		throw e
 	}
-	logClose()
+	//logClose()
 	const remainingTime = estimatedDuration - (window.performance.now() - transferStartRef)
 	log('Waiting remaining estimated time...', remainingTime)
 	await delay(remainingTime)
