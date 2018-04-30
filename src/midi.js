@@ -1,7 +1,3 @@
-import {
-	delay
-} from './utils'
-
 let globalAccess
 
 export const getMIDIAccess = () => new Promise((resolve, reject) => {
