@@ -15,9 +15,7 @@ import {
 	logClose
 } from './log'
 
-import {
-	parseIntelHex
-} from './hex'
+import { parseIntelHex } from './hex'
 
 import {
 	fromMIDI,
@@ -26,7 +24,6 @@ import {
 	addMIDIMessageListenerToInput,
 	removeMIDIMessageListenerFromInput,
 	sendMIDIToOutput,
-	scheduledSendMIDIToOutput,
 	openMIDIPort,
 	closeMIDIPort,
 	filterValidConnections
@@ -386,23 +383,23 @@ export async function sendFirmwareToSingleLink(link, data) {
 		MIDI_COMMANDS.StartFirmware, 0, 0
 	)
 	const transferStartRef = window.performance.now() + 100
-	//logOpenCollapsed('Data')
+	logOpenCollapsed('Data')
 	try {
 		for (let i = 0; i < data.length; i += 2) {
-			//log('Send Data command', data[i], data[i + 1])
+			log('Send Data command', data[i], data[i + 1])
 			sendMIDIToOutput(
 				link.output,
 				MIDI_COMMANDS.Data, data[i], data[i + 1],
-				//transferStartRef + (i / speedRate)
+				transferStartRef + (i / speedRate)
 			)
 		}
 	} catch (e) {
 		// Catching this error here just to close the log, throw the error again
 		// so the parent process can catch it.
-		//logClose()
+		logClose()
 		throw e
 	}
-	//logClose()
+	logClose()
 	const remainingTime = estimatedDuration - (window.performance.now() - transferStartRef)
 	log('Waiting remaining estimated time...', remainingTime)
 	await delay(remainingTime)
