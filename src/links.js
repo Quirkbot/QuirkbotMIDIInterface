@@ -258,10 +258,10 @@ export async function setLinksMidiEnabledStatus(links) {
 	await Promise.all(links.map(setSingleLinkMidiEnabledStatus))
 }
 
-export async function filterLinksRunningProgram(links) {
-	return links.filter(link => link.uuid.indexOf('QB0') === 0)
-}
+// export async function filterLinksRunningProgram(links) {
+// 	return links.filter(link => link.uuid.indexOf('QB0') === 0)
+// }
 
-export async function filterLinksOnBootloaderMode(links) {
-	return links.filter(link => link.bootloader)
-}
+// export async function filterLinksOnBootloaderMode(links) {
+// 	return links.filter(link => link.bootloader)
+// }

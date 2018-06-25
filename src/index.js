@@ -15,9 +15,7 @@ import {
 	setCustomLogHandler
 } from './log'
 
-import {
-	getMIDIAccess
-} from './midi'
+import { getMIDIAccess } from './midi'
 import {
 	guaranteeLockThread,
 	unlockThread,
@@ -26,7 +24,7 @@ import {
 import {
 	findDeadLinks,
 	findPossibleLinks,
-	// updateLinksInfoIfNeeded
+	updateLinksInfoIfNeeded
 } from './links'
 
 import {
@@ -225,13 +223,13 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 
 	log('Current links', links)
 
-	// logOpen('Update links info (if needed)')
-	// try {
-	// 	await updateLinksInfoIfNeeded(links)
-	// } catch (error) {
-	// 	log(error)
-	// }
-	// logClose()
+	logOpen('Update links info (if needed)')
+	try {
+		await updateLinksInfoIfNeeded(links)
+	} catch (error) {
+		log(error)
+	}
+	logClose()
 
 	logOpen('Handle pending enter bootloader mode')
 	try {

@@ -374,7 +374,7 @@ export async function sendFirmwareToSingleLinkWithConfidence(link, data) {
 
 export async function sendFirmwareToSingleLink(link, data) {
 	const totalBytes = data.length
-	const speedRate = 8 // 4 empirically found best value
+	const speedRate = 4 // 4 empirically found best value
 	const estimatedDuration = (totalBytes / speedRate) + 1000
 	log('Send StartFirmware command', 'Total bytes', totalBytes)
 	log('Transfer estimated duration', estimatedDuration)
