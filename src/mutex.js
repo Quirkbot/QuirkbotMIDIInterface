@@ -54,6 +54,10 @@ export async function lockThread(runtimeId) {
 	if (lock.runtimeId !== runtimeId) {
 		throw new Error(`Runtime ID missmatch. ${lock.runtimeId} != ${runtimeId}`)
 	}
+	// in case the window is unloaded while the thread is locked, clear it
+	if (typeof window !== 'undefined') {
+		window.addEventListener('beforeunload', clearLock)
+	}
 }
 
 export async function unlockThread(runtimeId) {
@@ -65,4 +69,8 @@ export async function unlockThread(runtimeId) {
 		throw new Error(`This runtime has not locked this thread. Current id is ${lock.runtimeId}`)
 	}
 	clearLock()
+	// remove the listerner that monitors if the window is unloaded
+	if (typeof window !== 'undefined') {
+		window.removeEventListener('beforeunload', clearLock)
+	}
 }
