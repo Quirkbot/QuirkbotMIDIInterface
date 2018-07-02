@@ -2,7 +2,8 @@ import {
 	inPlaceArrayDiff,
 	inPlaceArrayConcat,
 	delay,
-	asyncSafeWhile
+	asyncSafeWhile,
+	generateUniqueId,
 } from './utils'
 
 import {
@@ -24,7 +25,9 @@ import {
 import {
 	findDeadLinks,
 	findPossibleLinks,
-	updateLinksInfoIfNeeded
+	updateLinksInfoIfNeeded,
+	syncLinksWithState,
+	saveLinksStateToLocalStorage,
 } from './links'
 
 import {
@@ -41,6 +44,7 @@ const mainLinks = []
 const pendingUploads = []
 const pendingEnterBootloaderMode = []
 const pendingExitBootloaderMode = []
+let mainMidiAccess = null
 let monitoring = false
 
 export { enableLogs, disableLogs, setCustomLogHandler }
@@ -52,22 +56,33 @@ export async function init() {
 	}
 	try {
 		monitoring = true
+		mainMidiAccess = await getMIDIAccess()
 		continuouslyMonitor(
+			true,
 			mainLinksMap,
 			mainLinks,
 			pendingUploads,
 			pendingEnterBootloaderMode,
 			pendingExitBootloaderMode,
-			await getMIDIAccess()
+			mainMidiAccess,
 		)
+		if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+			window.addEventListener('storage', handleStateChange)
+		}
 	} catch (error) {
 		monitoring = false
+		if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+			window.removeEventListener('storage', handleStateChange)
+		}
 		log('Could not init', error)
 	}
 }
 
 export function destroy() {
 	monitoring = false
+	if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+		window.removeEventListener('storage', handleStateChange)
+	}
 }
 
 export function getLinks() {
@@ -166,19 +181,19 @@ export async function exitBootloaderMode(link) {
 	return request.link
 }
 
-async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess) {
+async function continuouslyMonitor(firstRun, linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess) {
 	if (!monitoring) {
 		log('Monitoring disabled. Call init() to start')
 		return
 	}
-	const runtimeId = (Math.random() * 100000000000).toFixed(0)
+	const runtimeId = generateUniqueId()
 	logOpenCollapsed(`Monitor - Runtime ID: ${runtimeId}`)
 
 	if (typeof document !== 'undefined' && document.hidden) {
 		log('Tab is not visible. Stopping task.')
 		logClose(true)
 		await delay(200 + (Math.random() * 100))
-		continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
+		continuouslyMonitor(false, linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 		return
 	}
 
@@ -190,10 +205,20 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 		log(`Error trying to lock thread ${runtimeId}`, error)
 		logClose(true)
 		await delay(200 + (Math.random() * 100))
-		continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
+		continuouslyMonitor(false, linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 		return
 	}
 	logClose()
+
+	if (firstRun) {
+		logOpenCollapsed('Sync with initial state')
+		try {
+			syncWithRawState(localStorage.getItem('_qbmidi_links_'), linksMap, links, midiAccess)
+		} catch (error) {
+			log(error)
+		}
+		logClose()
+	}
 
 	logOpen('Find dead links')
 	let removedLinks
@@ -206,6 +231,7 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 	inPlaceArrayDiff(links, removedLinks)
 	removedLinks.forEach(link => linksMap.delete(link))
 	log('Removed links', removedLinks)
+	saveLinksStateToLocalStorage(links)
 	logClose()
 
 	logOpen('Find new links')
@@ -219,6 +245,7 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 	inPlaceArrayConcat(links, foundLinks)
 	foundLinks.forEach(link => linksMap.set(link, link))
 	log('Found links', foundLinks)
+	saveLinksStateToLocalStorage(links)
 	logClose()
 
 	log('Current links', links)
@@ -229,11 +256,12 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 	} catch (error) {
 		log(error)
 	}
+	saveLinksStateToLocalStorage(links)
 	logClose()
 
 	logOpen('Handle pending enter bootloader mode')
 	try {
-		await handlePendingEnterBootloaderModes(enterBootloaderModes, midiAccess)
+		await handlePendingEnterBootloaderModes(links, enterBootloaderModes, midiAccess)
 	} catch (error) {
 		log(error)
 	}
@@ -241,7 +269,7 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 
 	logOpen('Handle pending exit bootloader mode')
 	try {
-		await handlePendingExitBootloaderModes(exitBootloaderModes, midiAccess)
+		await handlePendingExitBootloaderModes(links, exitBootloaderModes, midiAccess)
 	} catch (error) {
 		log(error)
 	}
@@ -249,10 +277,20 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 
 	logOpen('Handle pending uploads')
 	try {
-		await handlePendingUploads(uploads, midiAccess)
+		await handlePendingUploads(links, uploads, midiAccess)
 	} catch (error) {
 		log(error)
 	}
+	logClose()
+
+	logOpenCollapsed('Save state to localStorage')
+	const state = links.map(link => ({
+		...link,
+		input  : link.input.id,
+		output : link.output.id,
+	}))
+	localStorage.setItem('_qbmidi_links_', JSON.stringify(state))
+	log('State', state)
 	logClose()
 
 	logOpenCollapsed('Unlock Thread')
@@ -263,7 +301,7 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 		logClose(true)
 		log('Error trying to unlock thread', error)
 		await delay(200 + (Math.random() * 100))
-		continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
+		continuouslyMonitor(false, linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 		return
 	}
 	logClose()
@@ -277,43 +315,51 @@ async function continuouslyMonitor(linksMap, links, uploads, enterBootloaderMode
 	if (foundLinks.length) {
 		log('%cQuirkbots found', 'color:green', foundLinks)
 	}
-	continuouslyMonitor(linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
+	continuouslyMonitor(false, linksMap, links, uploads, enterBootloaderModes, exitBootloaderModes, midiAccess)
 }
 
-async function handlePendingUploads(uploads, midiAccess) {
+async function handlePendingUploads(links, uploads, midiAccess) {
 	// Handle only one upload at the time
 	const upload = uploads[0]
 	if (upload) {
-		await handleSinglePendingUpload(upload, uploads, midiAccess)
+		await handleSinglePendingUpload(links, upload, uploads, midiAccess)
 	}
 }
 
-async function handleSinglePendingUpload(upload, uploads, midiAccess) {
+async function handleSinglePendingUpload(links, upload, uploads, midiAccess) {
 	logOpen('Upload')
 	upload.link.uploading = true
+	saveLinksStateToLocalStorage(links)
 	try {
-		await uploadHexToSingleLink(upload.link, upload.hexString, midiAccess)
+		await uploadHexToSingleLink(
+			upload.link,
+			upload.hexString,
+			midiAccess,
+			() => saveLinksStateToLocalStorage(links)
+		)
 		log('%cSuccess', 'color:green')
 	} catch (error) {
 		log('%cUpload error', 'color:red', error)
 		upload.error = error
 	}
 	upload.link.uploading = false
-	logClose()
 	uploads.splice(uploads.indexOf(upload), 1)
+	saveLinksStateToLocalStorage(links)
+	logClose()
 }
 
-async function handlePendingEnterBootloaderModes(requests, midiAccess) {
+async function handlePendingEnterBootloaderModes(links, requests, midiAccess) {
 	// Handle only one request at the time
 	const request = requests[0]
 	if (request) {
-		await handleSinglePendingEnterBootloaderMode(request, requests, midiAccess)
+		await handleSinglePendingEnterBootloaderMode(links, request, requests, midiAccess)
 	}
 }
 
-async function handleSinglePendingEnterBootloaderMode(request, requests, midiAccess) {
+async function handleSinglePendingEnterBootloaderMode(links, request, requests, midiAccess) {
 	logOpen('Enter Bootloader Mode')
 	request.link.enteringBootloaderMode = true
+	saveLinksStateToLocalStorage(links)
 	try {
 		await guaranteeSingleLinkEnterBootloaderMode(request.link, midiAccess)
 		log('%cSuccess', 'color:green')
@@ -322,21 +368,23 @@ async function handleSinglePendingEnterBootloaderMode(request, requests, midiAcc
 		request.error = error
 	}
 	request.link.enteringBootloaderMode = false
-	logClose()
 	requests.splice(requests.indexOf(request), 1)
+	saveLinksStateToLocalStorage(links)
+	logClose()
 }
 
-async function handlePendingExitBootloaderModes(requests, midiAccess) {
+async function handlePendingExitBootloaderModes(links, requests, midiAccess) {
 	// Handle only one request at the time
 	const request = requests[0]
 	if (request) {
-		await handleSinglePendingExitBootloaderMode(request, requests, midiAccess)
+		await handleSinglePendingExitBootloaderMode(links, request, requests, midiAccess)
 	}
 }
 
-async function handleSinglePendingExitBootloaderMode(request, requests, midiAccess) {
+async function handleSinglePendingExitBootloaderMode(links, request, requests, midiAccess) {
 	logOpen('Exit Bootloader Mode')
 	request.link.exitingBootloaderMode = true
+	saveLinksStateToLocalStorage(links)
 	try {
 		await guaranteeSingleLinkExitBootloaderMode(request.link, midiAccess)
 		log('%cSuccess', 'color:green')
@@ -345,6 +393,53 @@ async function handleSinglePendingExitBootloaderMode(request, requests, midiAcce
 		request.error = error
 	}
 	request.link.exitingBootloaderMode = false
-	logClose()
 	requests.splice(requests.indexOf(request), 1)
+	saveLinksStateToLocalStorage(links)
+	logClose()
+}
+
+// Syncronize with other tabs
+function handleStateChange({ key, newValue }) {
+	if (key !== '_qbmidi_links_') {
+		return
+	}
+	syncWithRawState(newValue, mainLinksMap, mainLinks, mainMidiAccess)
+}
+
+function syncWithRawState(rawState, linksMap, links, midiAccess) {
+	logOpenCollapsed('Sync with state')
+	let state
+	try {
+		state = JSON.parse(rawState)
+	} catch (error) {
+		log('Error trying parse raw state', error)
+		logClose()
+		return
+	}
+	if (!state) {
+		log('State is empty')
+		logClose()
+		return
+	}
+	log('State', state)
+	const {
+		updatedLinks,
+		foundLinks,
+		removedLinks,
+	} = syncLinksWithState(links, state, midiAccess)
+
+	// update the maps
+	foundLinks.forEach(link => linksMap.set(link, link))
+	removedLinks.forEach(link => linksMap.delete(link))
+
+	if (updatedLinks.length) {
+		log('%cQuirkbots updated', 'color:blue', updatedLinks)
+	}
+	if (removedLinks.length) {
+		log('%cQuirkbots removed', 'color:orange', removedLinks)
+	}
+	if (foundLinks.length) {
+		log('%cQuirkbots found', 'color:green', foundLinks)
+	}
+	logClose()
 }

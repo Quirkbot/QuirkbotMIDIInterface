@@ -5,7 +5,8 @@ import {
 	pad,
 	safeWhile,
 	asyncSafeWhile,
-	tryToExecute
+	tryToExecute,
+	generateUniqueId,
 } from './utils'
 
 import {
@@ -34,16 +35,18 @@ import {
 	PAGE_SIZE
 } from './constants'
 
-let LINK_RUNTIME_ID_FACTORY = 0
-
-export function createNewLink({ input, output, method }) {
+export function createNewLink(data) {
 	return {
-		runtimeId : `${++LINK_RUNTIME_ID_FACTORY}-${Date.now()}`,
-		updated   : Date.now(),
-		input,
-		output,
-		method
+		runtimeId : data.runtimeId || generateUniqueId(),
+		updated   : data.updated || Date.now(),
+		...data
 	}
+}
+
+export function mergeLinkWithStateLink(link, stateLink) {
+	Object.keys(stateLink)
+		// .filter(key => key !== 'input' && key !== 'output' && key !== 'runtimeId')
+		.forEach(key => link[key] = stateLink[key])
 }
 
 export async function sendAndReceiveMessageToSingleLink(link, message, onMessage, timeout = 0) {
@@ -191,9 +194,10 @@ export async function updateSingleLinkInfo(link) {
 	link.updated = Date.now()
 }
 
-export async function uploadHexToSingleLink(link, hexString, midiAccess) {
+export async function uploadHexToSingleLink(link, hexString, midiAccess, onUpdate = () => {}) {
 	logOpen('Guarantee bootloader')
 	await guaranteeSingleLinkEnterBootloaderMode(link, midiAccess)
+	onUpdate()
 	logClose()
 
 	logOpen('Send firmware')
@@ -201,13 +205,16 @@ export async function uploadHexToSingleLink(link, hexString, midiAccess) {
 	parseIntelHex(hexString).data.forEach(o => data.push(o))
 	data = pad(data, PAGE_SIZE)
 	await tryToExecute(() => sendFirmwareToSingleLinkWithConfidence(link, data), 10, 1000)
+	onUpdate()
 	logClose()
 
 	logOpen('Exit bootloader')
 	await exitSingleLinkBootloaderMode(link, midiAccess)
+	onUpdate()
 	logClose()
 
 	await updateSingleLinkInfo(link)
+	onUpdate()
 }
 
 export async function guaranteeSingleLinkExitBootloaderMode(link, midiAccess) {
