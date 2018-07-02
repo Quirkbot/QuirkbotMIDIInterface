@@ -78,6 +78,18 @@ export const getMIDIInputs = midiAccess => midiAccess.inputs
 
 export const getMIDIOutputs = midiAccess => midiAccess.outputs
 
+export const getMIDIInputById = (id, midiAccess) => {
+	const converted = []
+	midiAccess.inputs.forEach(o => converted.push(o))
+	return converted.filter(i => i.id === id).pop()
+}
+
+export const getMIDIOutputById = (id, midiAccess) => {
+	const converted = []
+	midiAccess.outputs.forEach(o => converted.push(o))
+	return converted.filter(i => i.id === id).pop()
+}
+
 const MIDIMessageListenerMap = new Map()
 export const addMIDIMessageListenerToInput = (input, fn) => {
 	let handle = MIDIMessageListenerMap.get(input)

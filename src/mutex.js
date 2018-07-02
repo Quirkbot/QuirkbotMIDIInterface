@@ -7,18 +7,7 @@ import {
 	tryToExecute
 } from './utils'
 
-const localStorageHash = {}
-let localStorage
-if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
-	// eslint-disable-next-line prefer-destructuring
-	localStorage = window.localStorage
-} else {
-	localStorage = {
-		setItem    : (key, value) => localStorageHash[key] = value,
-		getItem    : key => localStorageHash[key] || null,
-		removeItem : key => delete localStorageHash[key]
-	}
-}
+import localStorage from './localStorage'
 
 const setLock = lock => localStorage.setItem('_qbmidi_lock_', JSON.stringify(lock))
 const getLock = () => JSON.parse(localStorage.getItem('_qbmidi_lock_'))

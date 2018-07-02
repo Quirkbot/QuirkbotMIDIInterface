@@ -5,27 +5,32 @@ import {
 	setSingleLinkMidiEnabledStatus,
 	updateSingleLinkInfo,
 	updateSingleLinkInfoIfNeeded,
-	createNewLink
+	createNewLink,
+	mergeLinkWithStateLink,
 } from './singleLink'
 
 import {
 	log,
 	logOpen,
 	logClose,
+	logOpenCollapsed,
 } from './log'
 
 import {
 	filterValidConnections,
 	getMIDIInputs,
 	getMIDIOutputs,
+	getMIDIInputById,
+	getMIDIOutputById,
 	openMIDIPort,
-	closeMIDIPort
+	closeMIDIPort,
 } from './midi'
 
 import {
 	arrayDiff,
 	inPlaceArrayDiff,
-	asyncSafeWhile
+	inPlaceArrayConcat,
+	asyncSafeWhile,
 } from './utils'
 
 export async function findDeadLinks(links, midiAccess) {
@@ -265,3 +270,78 @@ export async function setLinksMidiEnabledStatus(links) {
 // export async function filterLinksOnBootloaderMode(links) {
 // 	return links.filter(link => link.bootloader)
 // }
+
+export function syncLinksWithState(links, state, midiAccess) {
+	const foundLinks = []
+	const removedLinks = []
+	const updatedLinks = []
+	// Find updated/new links
+	state.forEach(soureStateLink => {
+		// clone the state link
+		const stateLink = { ...soureStateLink }
+		// Filter invalid input/output
+		stateLink.input = getMIDIInputById(stateLink.input, midiAccess)
+		stateLink.output = getMIDIOutputById(stateLink.output, midiAccess)
+		if (!stateLink.input || !stateLink.output) {
+			return
+		}
+		// Check if there is a matching link
+		const matchingLink = links.filter(link =>
+			link.runtimeId === stateLink.runtimeId
+		).pop()
+		if (matchingLink) {
+			// Update the matching link with info from the state
+			// If the state link has a new input/output (like when entering/exiting
+			// bootloader), open the new connections
+			if (stateLink.input !== matchingLink.input) {
+				openMIDIPort(stateLink.input)
+				closeMIDIPort(matchingLink.input)
+			}
+			if (stateLink.output !== matchingLink.output) {
+				openMIDIPort(stateLink.output)
+				closeMIDIPort(matchingLink.output)
+			}
+			mergeLinkWithStateLink(matchingLink, stateLink)
+			updatedLinks.push(matchingLink)
+			return
+		}
+		// If there is no matching link, create the new link
+		openMIDIPort(stateLink.input)
+		openMIDIPort(stateLink.output)
+		foundLinks.push(createNewLink(stateLink))
+	})
+	// Find removed links
+	links.forEach(link => {
+		const matchingStateLink = state.filter(stateLink =>
+			stateLink.runtimeId === link.runtimeId
+		).pop()
+		if (matchingStateLink) {
+			return
+		}
+		// If there is no matching state link, remove the link
+		closeMIDIPort(link.input)
+		closeMIDIPort(link.output)
+		removedLinks.push(link)
+	})
+
+	inPlaceArrayConcat(links, foundLinks)
+	inPlaceArrayDiff(links, removedLinks)
+
+	return {
+		foundLinks,
+		removedLinks,
+		updatedLinks,
+	}
+}
+
+export function saveLinksStateToLocalStorage(links) {
+	logOpenCollapsed('Save state to localStorage')
+	const state = links.map(link => ({
+		...link,
+		input  : link.input.id,
+		output : link.output.id,
+	}))
+	localStorage.setItem('_qbmidi_links_', JSON.stringify(state))
+	log('State', state)
+	logClose()
+}

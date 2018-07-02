@@ -48,6 +48,16 @@ export const pad = (data, pageSize) => {
 	return data
 }
 
+export const generateUniqueId = () => {
+	const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+	let str = ''
+	for (let i = 0; i < 10; ++i) {
+		const rand = Math.floor(Math.random() * ALPHABET.length)
+		str += ALPHABET.substring(rand, rand + 1)
+	}
+	return str
+}
+
 export const safeWhile = (conditionFn, loopFn, errorFn, maxIterations) => {
 	maxIterations = maxIterations || 500
 	let count = 0
