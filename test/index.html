@@ -38,12 +38,12 @@
 		<script src="../build/qbmidi.js"></script>
 		<script>
 			qbmidi.init()
-			qbmidi.verbose(true)
+			qbmidi.enableLogs()
 			document.getElementById('verbose_on').addEventListener('click', function() {
-				qbmidi.verbose(true)
+				qbmidi.enableLogs()
 			})
 			document.getElementById('verbose_off').addEventListener('click', function() {
-				qbmidi.verbose(false)
+				qbmidi.disableLogs()
 			})
 
 			setInterval(function(){
